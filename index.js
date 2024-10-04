@@ -27,8 +27,7 @@ let server = net.createServer((c) => {
   let imei;
   let intervalId = null;
   let previousIgnition = null;
-  let codeunique = null; // Unique code for the current course
-  let recordedIgnitionOff = false; // To track if the ignition off state has been recorded
+  let codeunique = null; // Unique code for the current trip
 
   function generateUniqueCode() {
     const timestamp = new Date().getTime().toString(16);
@@ -67,11 +66,11 @@ let server = net.createServer((c) => {
           if (detail.latitude !== 0 && detail.longitude !== 0) {
             // Check ignition state changes
             if (ignition === 1 && previousIgnition === 0) {
-              // Ignition turned ON - Start a new course
-              codeunique = generateUniqueCode(); // Generate new unique code for this course
-              console.log("New course started, unique code:", codeunique);
+              // Ignition turned ON - Start a new trip
+              codeunique = generateUniqueCode(); // Generate new unique code for this trip
+              console.log("New trip started, unique code:", codeunique);
 
-              // Insert the second record with ignition OFF (starting new course)
+              // Insert the first record with ignition ON (starting new trip)
               await query(
                 'INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?',
                 [[[  
@@ -87,10 +86,10 @@ let server = net.createServer((c) => {
                   donneGps[0].ioElements[5]?.value,
                   imei,
                   JSON.stringify(donneGps),
-                  codeunique, // Use the current unique code for this course
+                  codeunique, // Use the current unique code for this trip
                 ]]]
               );
-              console.log("Inserted data with ignition 0, starting new course.");
+              console.log("Inserted data for new trip.");
 
               // Start interval to collect data every 10 seconds
               if (intervalId) {
@@ -112,38 +111,35 @@ let server = net.createServer((c) => {
                     donneGps[0].ioElements[5]?.value,
                     imei,
                     JSON.stringify(donneGps),
-                    codeunique, // Use the current unique code for this course
+                    codeunique, // Use the current unique code for this trip
                   ]]]
                 );
-                console.log("Inserted data with ignition 1.");
+                console.log("Inserted data during trip.");
               }, 10000);
-
-              recordedIgnitionOff = false; // Reset the flag for recording ignition off state
             } else if (ignition === 0 && previousIgnition === 1) {
-              // Ignition turned OFF - End the current course
-              if (!recordedIgnitionOff) {
-                // Insert the first record with ignition OFF
-                await query(
-                  'INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?',
-                  [[[  
-                    detail.latitude,
-                    detail.longitude,
-                    detail.altitude,
-                    detail.angle,
-                    detail.satellites,
-                    detail.speed,
-                    ignition,
-                    mouvement,
-                    donneGps[0].ioElements[2]?.value,
-                    donneGps[0].ioElements[5]?.value,
-                    imei,
-                    JSON.stringify(donneGps),
-                    codeunique, // Use the same unique code for this course
-                  ]]]
-                );
-                console.log("Inserted data with ignition 0, ending course.");
-                recordedIgnitionOff = true; // Mark that ignition off state has been recorded
-              }
+              // Ignition turned OFF - End the current trip
+              console.log("Trip ended, unique code:", codeunique);
+
+              // Insert the last record with ignition OFF (ending the trip)
+              await query(
+                'INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?',
+                [[[  
+                  detail.latitude,
+                  detail.longitude,
+                  detail.altitude,
+                  detail.angle,
+                  detail.satellites,
+                  detail.speed,
+                  ignition,
+                  mouvement,
+                  donneGps[0].ioElements[2]?.value,
+                  donneGps[0].ioElements[5]?.value,
+                  imei,
+                  JSON.stringify(donneGps),
+                  codeunique, // Use the same unique code for this trip
+                ]]]
+              );
+              console.log("Inserted data for trip ending.");
 
               // Stop interval when ignition turns off
               if (intervalId) {
@@ -151,7 +147,7 @@ let server = net.createServer((c) => {
                 intervalId = null;
               }
 
-              codeunique = null; // Reset code for the next course
+              codeunique = null; // Reset code for the next trip
             }
 
             previousIgnition = ignition; // Update the previous ignition state
