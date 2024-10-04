@@ -125,7 +125,6 @@ const server = net.createServer((client) => {
       console.error("Error processing client data:", error);
     }
   });
-
   client.on('end', () => {
     console.log("Client disconnected");
     connection.end(); // Close the database connection
