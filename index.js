@@ -79,16 +79,6 @@ let server = net.createServer((c) => {
         console.log(donneGps[0].timestamp);
         console.log(donneGps[0].ioElements[0]);
         console.log(donneGps[0].ioElements[1]);
-        // console.log(donneGps[0].ioElements[2]);
-        // console.log(donneGps[0].ioElements[5]);
-        //console.log(donneGps[0].ioElements[6]);
-        //console.log(donneGps[0].ioElements[5]);
-
-        //  console.log(donneGps[0].ioElements);
-
-        //console.log(donneGps[0].gps)
-
-        //console.log(JSON.stringify(avl))
 
         const detailsData = []
 
@@ -114,7 +104,6 @@ let server = net.createServer((c) => {
             detail3.value,
             detail4.value,
             detail5.value,
-            //detail6.value,
             imei,
             JSON.stringify(myJsonString),
             codeunique
@@ -132,9 +121,7 @@ let server = net.createServer((c) => {
       writer.WriteInt32(avl.number_of_data);
       let response = writer.ByteBuffer;
       c.write(response); // send ACK for AVL DATA
-      //console.log(test);
       c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
-      //c.write("000000000000000F0C010500000007676574696E666F0100004312"); 
     }
   });
 });
