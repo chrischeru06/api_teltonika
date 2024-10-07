@@ -1,156 +1,117 @@
+/** Writen by Cerubala Christian Wann'y
+ * email: wanny@mediabox.bi
+ * tel: +25762442698
+ * This code is an API to take data from Teltonika devices and insert the data into a MySQL server.
+ */
+
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
+const binutils = require('binutils64');
 const mysql = require("mysql");
 const util = require("util");
 
-// Configuration MySQL
-const connection = mysql.createConnection({
+// MySQL Pool Creation
+const pool = mysql.createPool({
   host: "localhost",
   port: "3306",
   user: "cartrackingdvs",
   password: "63p85x:RsU+A/Dd(e7",
   database: "car_trucking",
+  connectionLimit: 10,
 });
 
-// Open MySQL connection
-connection.connect((error) => {
-  if (error) throw error;
-  console.log("Successfully connected to the database.");
-});
+// Utility to promisify queries
+const query = util.promisify(pool.query).bind(pool);
 
-const query = util.promisify(connection.query).bind(connection);
-
-let lastIgnitionChange = null;
-let lastIgnition = null;
-let intervalId = null;
-let sentDataWithSpeedZero = false; // Flag pour contrôle envoi unique vitesse = 0
-let lastSpeedZeroDataId = null; // ID de la dernière donnée envoyée avec vitesse = 0
-let timeSinceLastSpeedZeroDataSent = null; // Temps depuis la dernière donnée envoyée avec vitesse = 0
-
-// Fonction pour envoyer les données vers la base de données
-async function sendData(detailsData) {
-  const dataToInsert = detailsData.map((data) => [
-    data.gps.latitude,
-    data.gps.longitude,
-    data.gps.altitude,
-    data.gps.angle,
-    data.gps.satellites,
-    data.gps.speed,
-    data.ioElements.find(e => e.id === 'ignition')?.value,
-    data.ioElements.find(e => e.id === 'mouvement')?.value,
-    data.ioElements.find(e => e.id === 'gnss_statut')?.value,
-    data.ioElements.find(e => e.id === 'CEINTURE')?.value,
-    'some_device_uid', // Ajouter ici l'UID du device
-    JSON.stringify(data),
-    'some_code_course' // Ajouter ici le code course
-  ]);
-
-  try {
-    const result = await query('INSERT INTO tracking_data (latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [dataToInsert]);
-    lastSpeedZeroDataId = result.insertId; // Enregistrer l'ID de la dernière insertion
-  } catch (err) {
-    console.error("Error inserting data:", err);
-  }
+// Function to generate a unique code
+function generateUniqueCode() {
+  const timestamp = new Date().getTime().toString(16); // Utilisation du timestamp en base 16
+  const randomNum = Math.floor(Math.random() * 1000); // Génération d'un nombre aléatoire entre 0 et 999
+  return timestamp + randomNum;
 }
 
-// Fonction pour vérifier si les données doivent être envoyées
-function shouldSendData(lastIgnition, currentIgnition) {
-  const currentTime = new Date();
-  
-  if (lastIgnition !== currentIgnition) {
-    if (!lastIgnitionChange || currentTime - lastIgnitionChange > 60 * 1000) {
-      lastIgnitionChange = currentTime;
-      return true;
-    }
-    return false; // Ignition a changé trop rapidement (< 1 min)
-  }
-  
-  return true; // Aucune transition rapide d'ignition
-}
-
-// Vérification pour supprimer la donnée si aucune nouvelle donnée avec vitesse différente de 0 n'est reçue
-function checkSpeedZeroData(currentTime) {
-  if (lastSpeedZeroDataId) {
-    const timeSinceLastData = currentTime - timeSinceLastSpeedZeroDataSent;
-    if (timeSinceLastData >= 60 * 1000) { // Si plus d'une minute s'est écoulée
-      deleteDataFromDB(lastSpeedZeroDataId); // Supprimer la donnée de la base de données
-      lastSpeedZeroDataId = null; // Réinitialiser l'ID
-    }
-  }
-}
-
-// Fonction pour supprimer une donnée de la base de données
-async function deleteDataFromDB(dataId) {
-  try {
-    await query('DELETE FROM tracking_data WHERE id = ?', [dataId]);
-    console.log("Deleted data from DB with ID:", dataId);
-  } catch (err) {
-    console.error("Error deleting data:", err);
-  }
-}
-
-// Serveur Teltonika
-let server = net.createServer((c) => {
+// TCP Server Creation
+const server = net.createServer((c) => {
   console.log("Client connected");
+
   let imei;
-  
-  c.on('data', async (data) => {
-    let buffer = data;
-    let parser = new Parser(buffer);
-
-    if (parser.isImei) {
-      imei = parser.imei;
-      console.log("IMEI:", imei);
-      c.write(Buffer.alloc(1, 1)); // ACK IMEI
-    } else {
-      let avl = parser.getAvl();
-      let gpsData = avl.records.map(({ gps, ioElements }) => ({ gps, ioElements }));
-      let ignition = gpsData[0]?.ioElements.find(e => e.id === 'ignition')?.value;
-      let speed = gpsData[0]?.gps?.speed;
-      
-      if (imei && gpsData.length) {
-        let currentIgnition = ignition;
-        const currentTime = new Date();
-
-        // Cas 1: Ignition = 1, vitesse > 0, envoyer toutes les 5 secondes
-        if (speed > 0 && ignition === 1 && shouldSendData(lastIgnition, currentIgnition)) {
-          sentDataWithSpeedZero = false; // Réinitialiser
-          clearInterval(intervalId);
-          intervalId = setInterval(() => {
-            sendData(gpsData); 
-          }, 5 * 1000); // 5 secondes
-        } 
-        // Cas 2: Ignition = 1, vitesse = 0, envoyer une seule fois
-        else if (ignition === 1 && speed === 0 && !sentDataWithSpeedZero) {
-          clearInterval(intervalId);
-          await sendData(gpsData); // Envoyer une seule fois
-          sentDataWithSpeedZero = true; // Empêcher d'envoyer à nouveau jusqu'à changement
-          timeSinceLastSpeedZeroDataSent = currentTime; // Réinitialiser le temps
-        }
-        // Cas 3: Ignition = 0, vitesse = 0, envoyer toutes les 10 minutes
-        else if (ignition === 0 && speed === 0) {
-          sentDataWithSpeedZero = false; // Réinitialiser
-          clearInterval(intervalId);
-          intervalId = setInterval(() => {
-            sendData(gpsData); 
-          }, 10 * 60 * 1000); // 10 minutes
-        }
-
-        // Vérifier et éventuellement supprimer la donnée de vitesse = 0
-        checkSpeedZeroData(currentTime);
-      }
-      
-      lastIgnition = ignition; // Mettre à jour l'état de l'ignition
-    }
-  });
 
   c.on('end', () => {
     console.log("Client disconnected");
-    clearInterval(intervalId);
+  });
+
+  c.on('data', async (data) => {
+    try {
+      let buffer = data;
+      let parser = new Parser(buffer);
+
+      if (parser.isImei) {
+        imei = parser.imei;
+        console.log("IMEI:", imei);
+        c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
+      } else {
+        let avl = parser.getAvl();
+        console.log(avl);
+        let donneGps = avl?.records?.map(({ gps, timestamp, ioElements }) => ({ gps, timestamp, ioElements }));
+
+        if (donneGps && donneGps.length > 0) {
+          let detail = donneGps[0].gps;
+          let detail2 = donneGps[0].ioElements[0];
+          let detail3 = donneGps[0].ioElements[1];
+          let detail4 = donneGps[0].ioElements[2];
+          let detail5 = donneGps[0].ioElements[5];
+
+          if (detail.latitude !== 0 && detail.longitude !== 0) {
+            const lastData = (await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]))[0];
+            let codeunique;
+
+            if (lastData) {
+              codeunique = lastData.CODE_COURSE;
+              if (lastData.ignition !== detail2.value) {
+                codeunique = generateUniqueCode();
+              }
+            } else {
+              codeunique = generateUniqueCode();
+            }
+
+            const detailsData = [
+              [
+                detail.latitude,
+                detail.longitude,
+                detail.altitude,
+                detail.angle,
+                detail.satellites,
+                detail.speed,
+                detail2.value,
+                detail3.value,
+                detail4.value,
+                detail5.value,
+                imei,
+                JSON.stringify(donneGps),
+                codeunique
+              ]
+            ];
+
+            await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [detailsData]);
+          } else {
+            console.log("Lat, log are 0, no insertion");
+          }
+        }
+
+        let writer = new binutils.BinaryWriter();
+        writer.WriteInt32(avl.number_of_data);
+        let response = writer.ByteBuffer;
+
+        c.write(response); // Send ACK for AVL DATA
+        c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+      }
+    } catch (error) {
+      console.error("Error processing data: ", error);
+    }
   });
 });
 
-// Démarrer le serveur
+// Server listening
 server.listen(2354, '141.94.194.193', () => {
-  console.log("Server started on 2354");
+  console.log("Server started on port 2354");
 });
