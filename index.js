@@ -1,7 +1,5 @@
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
-const binutils = require('binutils64');
-const path = require('path');
 const mysql = require("mysql");
 const util = require("util");
 
@@ -23,14 +21,32 @@ connection.connect((error) => {
 const query = util.promisify(connection.query).bind(connection);
 
 let lastIgnitionChange = null;
+let lastIgnition = null;
 let intervalId = null;
 let sendDataInterval = 5 * 1000; // 5 secondes par défaut
-let sentDataWithSpeedZero = false; // Flag pour contrôler l'envoi unique avec vitesse = 0
+let sentDataWithSpeedZero = false; // Flag pour contrôle envoi unique vitesse = 0
 
 // Fonction pour envoyer les données vers la base de données
 async function sendData(detailsData) {
+  // Extraction des valeurs spécifiques pour l'insertion SQL
+  const dataToInsert = detailsData.map((data) => [
+    data.gps.latitude,
+    data.gps.longitude,
+    data.gps.altitude,
+    data.gps.angle,
+    data.gps.satellites,
+    data.gps.speed,
+    data.ioElements.find(e => e.id === 'ignition')?.value,
+    data.ioElements.find(e => e.id === 'mouvement')?.value,
+    data.ioElements.find(e => e.id === 'gnss_statut')?.value,
+    data.ioElements.find(e => e.id === 'CEINTURE')?.value,
+    'some_device_uid', // Ajouter ici l'UID du device
+    JSON.stringify(data),
+    'some_code_course' // Ajouter ici le code course
+  ]);
+
   try {
-    await query('INSERT INTO tracking_data (latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [detailsData]);
+    await query('INSERT INTO tracking_data (latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [dataToInsert]);
   } catch (err) {
     console.error("Error inserting data:", err);
   }
@@ -67,7 +83,7 @@ let server = net.createServer((c) => {
     } else {
       let avl = parser.getAvl();
       let gpsData = avl.records.map(({ gps, ioElements }) => ({ gps, ioElements }));
-      let ignition = gpsData[0]?.ioElements[0]?.value;
+      let ignition = gpsData[0]?.ioElements.find(e => e.id === 'ignition')?.value;
       let speed = gpsData[0]?.gps?.speed;
       
       if (imei && gpsData.length) {
