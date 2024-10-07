@@ -68,51 +68,37 @@ const server = net.createServer((c) => {
             const currentTime = new Date().getTime();
 
             if (lastIgnition !== null && lastIgnition !== ignition) {
+              // Enregistrer les premières données temporairement
+              await insertTrackingData(detail, donneGps[0], imei, generateUniqueCode(), true);
+              lastIgnitionChangeTime = currentTime;
+
               // Vérifier si le changement d'ignition s'est produit en moins d'une minute
               if (lastIgnitionChangeTime && currentTime - lastIgnitionChangeTime < 60 * 1000) {
-                console.log("Changement d'ignition trop rapide, pas d'enregistrement.");
+                await deleteTemporaryData(imei);
+                console.log("Changement d'ignition trop rapide, suppression des données temporaires.");
                 return;
               }
-              lastIgnitionChangeTime = currentTime;
+
+              lastIgnition = ignition;
             }
 
-            const lastData = (await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]))[0];
-            let codeunique;
-
-            if (lastData) {
-              codeunique = lastData.CODE_COURSE;
-              if (lastData.ignition !== ignition) {
-                // Ignition state changed, generate a new code
-                codeunique = generateUniqueCode();
-                lastIgnition = ignition;
-
-                // Save the first data point immediately
-                await insertTrackingData(detail, donneGps[0], imei, codeunique);
+            // Handle subsequent data points based on the conditions
+            if (ignition === 1) {
+              if (speed === 0) {
+                console.log("Vitesse est 0, attendre avant enregistrement.");
               } else {
-                // Handle subsequent data points based on the conditions
-                if (ignition === 1 && speed === 0) {
-                  // Wait until speed is non-zero
-                  if (lastData.speed !== 0) {
-                    await insertTrackingData(detail, donneGps[0], imei, codeunique);
-                  }
-                } else if (ignition === 1 && speed !== 0) {
-                  // Insert data every 5 seconds if speed is non-zero
-                  if (!lastSpeedInsertTime || currentTime - lastSpeedInsertTime >= 5 * 1000) {
-                    await insertTrackingData(detail, donneGps[0], imei, codeunique);
-                    lastSpeedInsertTime = currentTime;
-                  }
-                } else if (ignition === 0 && speed === 0) {
-                  // Insert data every 10 minutes
-                  if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
-                    await insertTrackingData(detail, donneGps[0], imei, codeunique);
-                    lastInsertTime = currentTime;
-                  }
+                // Insert data every 5 seconds if speed is non-zero
+                if (!lastSpeedInsertTime || currentTime - lastSpeedInsertTime >= 5 * 1000) {
+                  await insertTrackingData(detail, donneGps[0], imei, generateUniqueCode(), false);
+                  lastSpeedInsertTime = currentTime;
                 }
               }
-            } else {
-              // No previous data, insert the first record
-              codeunique = generateUniqueCode();
-              await insertTrackingData(detail, donneGps[0], imei, codeunique);
+            } else if (ignition === 0 && speed === 0) {
+              // Insert data every 10 minutes
+              if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
+                await insertTrackingData(detail, donneGps[0], imei, generateUniqueCode(), false);
+                lastInsertTime = currentTime;
+              }
             }
           } else {
             console.log("Lat, log are 0, no insertion");
@@ -133,7 +119,7 @@ const server = net.createServer((c) => {
 });
 
 // Function to insert tracking data into the database
-async function insertTrackingData(detail, donneGps, imei, codeunique) {
+async function insertTrackingData(detail, donneGps, imei, codeunique, isTemporary) {
   try {
     const detailsData = [
       [
@@ -149,12 +135,22 @@ async function insertTrackingData(detail, donneGps, imei, codeunique) {
         donneGps.ioElements[5]?.value,
         imei,
         JSON.stringify(donneGps),
-        codeunique
+        codeunique,
+        isTemporary ? 1 : 0 // Flag to mark temporary records
       ]
     ];
-    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [detailsData]);
+    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE, temporary) VALUES ?', [detailsData]);
   } catch (error) {
     console.error("Error inserting tracking data: ", error);
+  }
+}
+
+// Function to delete temporary tracking data from the database
+async function deleteTemporaryData(imei) {
+  try {
+    await query('DELETE FROM tracking_data WHERE device_uid = ? AND temporary = 1', [imei]);
+  } catch (error) {
+    console.error("Error deleting temporary tracking data: ", error);
   }
 }
 
