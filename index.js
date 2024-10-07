@@ -1,49 +1,69 @@
-/** Writen by Cerubala Christian Wann'y
- * email: wanny@mediabox.bi
- * tel: +25762442698
- * This code is an API to take data from Teltonika devices and insert the data into a MySQL server.
- */
-
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const binutils = require('binutils64');
 const mysql = require("mysql");
 const util = require("util");
 
-let lastInsertTime = null;
-let lastIgnitionChangeTime = null;
-let lastSpeedInsertTime = null;
+let server = net.createServer((c) => {
+  console.log("client connected");
 
-// MySQL Pool Creation
-const pool = mysql.createPool({
-  host: "localhost",
-  port: "3306",
-  user: "cartrackingdvs",
-  password: "63p85x:RsU+A/Dd(e7",
-  database: "car_trucking",
-  connectionLimit: 10,
-});
+  const connection = mysql.createConnection({
+    host: "localhost",
+    port: "3306",
+    user: "cartrackingdvs",
+    password: "63p85x:RsU+A/Dd(e7",
+    database: "car_trucking",
+  });
 
-// Utility to promisify queries
-const query = util.promisify(pool.query).bind(pool);
+  connection.connect((error) => {
+    if (error) throw error;
+    console.log("Successfully connected to the database");
+  });
 
-// Function to generate a unique code
-function generateUniqueCode() {
-  const timestamp = new Date().getTime().toString(16);
-  const randomNum = Math.floor(Math.random() * 1000);
-  return timestamp + randomNum;
-}
+  const query = util.promisify(connection.query).bind(connection);
+  c.on('end', () => {
+    console.log("client disconnected");
+  });
 
-// TCP Server Creation
-const server = net.createServer((c) => {
-  console.log("Client connected");
+  function generateUniqueCode() {
+    const timestamp = new Date().getTime().toString(16);
+    const randomNum = Math.floor(Math.random() * 1000);
+    return timestamp + randomNum;
+  }
+
+  async function insertTrackingData(detail, data, imei, codeunique, isTemporary) {
+    const detailsData = [
+      [
+        detail.latitude,
+        detail.longitude,
+        detail.altitude,
+        detail.angle,
+        detail.satellites,
+        detail.speed,
+        data.ioElements[0]?.value || 0, // Ignition
+        data.ioElements[1]?.value || 0, // Movement
+        data.ioElements[2]?.value || 0, // GNSS status
+        data.ioElements[5]?.value || 0, // Seat belt status
+        imei,
+        JSON.stringify(data),
+        codeunique,
+        isTemporary ? 1 : 0 // Flag to mark temporary records
+      ]
+    ];
+
+    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, speed, ignition, movement, gnss_status, seat_belt, device_uid, json, CODE_COURSE, is_temporary) VALUES ?', [detailsData]);
+  }
+
+  async function deleteTemporaryData(imei) {
+    await query('DELETE FROM tracking_data WHERE device_uid = ? AND is_temporary = 1', [imei]);
+  }
 
   let imei;
+  let currentCodeUnique = null;
   let lastIgnition = null;
-
-  c.on('end', () => {
-    console.log("Client disconnected");
-  });
+  let lastIgnitionChangeTime = null;
+  let lastSpeedInsertTime = null;
+  let lastInsertTime = null;
 
   c.on('data', async (data) => {
     try {
@@ -68,8 +88,11 @@ const server = net.createServer((c) => {
             const currentTime = new Date().getTime();
 
             if (lastIgnition !== null && lastIgnition !== ignition) {
+              // Changement d'ignition : générer un nouveau code unique
+              currentCodeUnique = generateUniqueCode();
+
               // Enregistrer les premières données temporairement
-              await insertTrackingData(detail, donneGps[0], imei, generateUniqueCode(), true);
+              await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, true);
               lastIgnitionChangeTime = currentTime;
 
               // Vérifier si le changement d'ignition s'est produit en moins d'une minute
@@ -89,14 +112,14 @@ const server = net.createServer((c) => {
               } else {
                 // Insert data every 5 seconds if speed is non-zero
                 if (!lastSpeedInsertTime || currentTime - lastSpeedInsertTime >= 5 * 1000) {
-                  await insertTrackingData(detail, donneGps[0], imei, generateUniqueCode(), false);
+                  await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
                   lastSpeedInsertTime = currentTime;
                 }
               }
             } else if (ignition === 0 && speed === 0) {
               // Insert data every 10 minutes
               if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
-                await insertTrackingData(detail, donneGps[0], imei, generateUniqueCode(), false);
+                await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
                 lastInsertTime = currentTime;
               }
             }
@@ -118,43 +141,6 @@ const server = net.createServer((c) => {
   });
 });
 
-// Function to insert tracking data into the database
-async function insertTrackingData(detail, donneGps, imei, codeunique, isTemporary) {
-  try {
-    const detailsData = [
-      [
-        detail.latitude,
-        detail.longitude,
-        detail.altitude,
-        detail.angle,
-        detail.satellites,
-        detail.speed,
-        donneGps.ioElements[0]?.value,
-        donneGps.ioElements[1]?.value,
-        donneGps.ioElements[2]?.value,
-        donneGps.ioElements[5]?.value,
-        imei,
-        JSON.stringify(donneGps),
-        codeunique,
-        isTemporary ? 1 : 0 // Flag to mark temporary records
-      ]
-    ];
-    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE, temporary) VALUES ?', [detailsData]);
-  } catch (error) {
-    console.error("Error inserting tracking data: ", error);
-  }
-}
-
-// Function to delete temporary tracking data from the database
-async function deleteTemporaryData(imei) {
-  try {
-    await query('DELETE FROM tracking_data WHERE device_uid = ? AND temporary = 1', [imei]);
-  } catch (error) {
-    console.error("Error deleting temporary tracking data: ", error);
-  }
-}
-
-// Server listening
 server.listen(2354, '141.94.194.193', () => {
   console.log("Server started on port 2354");
 });
