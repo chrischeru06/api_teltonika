@@ -11,6 +11,7 @@ const mysql = require("mysql");
 const util = require("util");
 
 let lastInsertTime = null;
+let lastIgnitionChangeTime = null;
 
 // MySQL Pool Creation
 const pool = mysql.createPool({
@@ -63,6 +64,17 @@ const server = net.createServer((c) => {
           let speed = detail.speed;
 
           if (detail.latitude !== 0 && detail.longitude !== 0) {
+            const currentTime = new Date().getTime();
+
+            if (lastIgnition !== null && lastIgnition !== ignition) {
+              // Vérifier si le changement d'ignition s'est produit en moins d'une minute
+              if (lastIgnitionChangeTime && currentTime - lastIgnitionChangeTime < 60 * 1000) {
+                console.log("Changement d'ignition trop rapide, pas d'enregistrement.");
+                return;
+              }
+              lastIgnitionChangeTime = currentTime;
+            }
+
             const lastData = (await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]))[0];
             let codeunique;
 
@@ -84,7 +96,6 @@ const server = net.createServer((c) => {
                   }
                 } else if (ignition === 0 && speed === 0) {
                   // Insert data every 10 minutes
-                  const currentTime = new Date().getTime();
                   if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
                     await insertTrackingData(detail, donneGps[0], imei, codeunique);
                     lastInsertTime = currentTime;
@@ -144,3 +155,4 @@ async function insertTrackingData(detail, donneGps, imei, codeunique) {
 server.listen(2354, '141.94.194.193', () => {
   console.log("Server started on port 2354");
 });
+
