@@ -39,9 +39,7 @@ let server = net.createServer((c) => {
   function generateUniqueCode() {
     const timestamp = new Date().getTime().toString(16); // Use timestamp in base 16
     const randomNum = Math.floor(Math.random() * 1000); // Generate a random number between 0 and 999
-    const uniqueCode = timestamp + randomNum;
-
-    return uniqueCode;
+    return timestamp + randomNum;
   }
 
   let imei;
@@ -101,12 +99,20 @@ let server = net.createServer((c) => {
             const currentTime = new Date().getTime();
 
             if (lastIgnition !== null && lastIgnition !== ignition) {
-              // Changement d'ignition : générer un nouveau code unique
-              currentCodeUnique = generateUniqueCode();
+              if (ignition === 1) {
+                // L'ignition passe de 0 à 1 - début de la course
+                currentCodeUnique = generateUniqueCode();
 
-              // Enregistrer les premières données temporairement
-              await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, true);
-              lastIgnitionChangeTime = currentTime;
+                // Enregistrer les premières données immédiatement
+                await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
+                console.log("Nouveau CODE_COURSE généré et première donnée enregistrée.");
+
+                lastIgnitionChangeTime = currentTime;
+              } else if (ignition === 0) {
+                // L'ignition passe de 1 à 0 - fin de la course
+                currentCodeUnique = generateUniqueCode();
+                console.log("Ignition est passée à 0, fin de course, nouveau CODE_COURSE généré.");
+              }
 
               // Vérifier si le changement d'ignition s'est produit en moins d'une minute
               if (lastIgnitionChangeTime && currentTime - lastIgnitionChangeTime < 60 * 1000) {
@@ -127,6 +133,7 @@ let server = net.createServer((c) => {
                 if (!lastSpeedInsertTime || currentTime - lastSpeedInsertTime >= 5 * 1000) {
                   await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
                   lastSpeedInsertTime = currentTime;
+                  console.log("Ignition 1 et vitesse > 0, données enregistrées.");
                 }
               }
             } else if (ignition === 0 && speed === 0) {
@@ -134,6 +141,7 @@ let server = net.createServer((c) => {
               if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
                 await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
                 lastInsertTime = currentTime;
+                console.log("Ignition 0 et vitesse 0, données enregistrées toutes les 10 minutes.");
               }
             }
           } else {
