@@ -10,6 +10,8 @@ const binutils = require('binutils64');
 const mysql = require("mysql");
 const util = require("util");
 
+let lastInsertTime = null;
+
 // MySQL Pool Creation
 const pool = mysql.createPool({
   host: "localhost",
@@ -25,8 +27,8 @@ const query = util.promisify(pool.query).bind(pool);
 
 // Function to generate a unique code
 function generateUniqueCode() {
-  const timestamp = new Date().getTime().toString(16); // Utilisation du timestamp en base 16
-  const randomNum = Math.floor(Math.random() * 1000); // Génération d'un nombre aléatoire entre 0 et 999
+  const timestamp = new Date().getTime().toString(16);
+  const randomNum = Math.floor(Math.random() * 1000);
   return timestamp + randomNum;
 }
 
@@ -35,6 +37,7 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let imei;
+  let lastIgnition = null;
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -56,10 +59,8 @@ const server = net.createServer((c) => {
 
         if (donneGps && donneGps.length > 0) {
           let detail = donneGps[0].gps;
-          let detail2 = donneGps[0].ioElements[0];
-          let detail3 = donneGps[0].ioElements[1];
-          let detail4 = donneGps[0].ioElements[2];
-          let detail5 = donneGps[0].ioElements[5];
+          let ignition = donneGps[0].ioElements[0]?.value;
+          let speed = detail.speed;
 
           if (detail.latitude !== 0 && detail.longitude !== 0) {
             const lastData = (await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]))[0];
@@ -67,32 +68,34 @@ const server = net.createServer((c) => {
 
             if (lastData) {
               codeunique = lastData.CODE_COURSE;
-              if (lastData.ignition !== detail2.value) {
+              if (lastData.ignition !== ignition) {
+                // Ignition state changed, generate a new code
                 codeunique = generateUniqueCode();
+                lastIgnition = ignition;
+
+                // Save the first data point immediately
+                await insertTrackingData(detail, donneGps[0], imei, codeunique);
+              } else {
+                // Handle subsequent data points based on the conditions
+                if (ignition === 1 && speed === 0) {
+                  // Wait until speed is non-zero
+                  if (lastData.speed !== 0) {
+                    await insertTrackingData(detail, donneGps[0], imei, codeunique);
+                  }
+                } else if (ignition === 0 && speed === 0) {
+                  // Insert data every 10 minutes
+                  const currentTime = new Date().getTime();
+                  if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
+                    await insertTrackingData(detail, donneGps[0], imei, codeunique);
+                    lastInsertTime = currentTime;
+                  }
+                }
               }
             } else {
+              // No previous data, insert the first record
               codeunique = generateUniqueCode();
+              await insertTrackingData(detail, donneGps[0], imei, codeunique);
             }
-
-            const detailsData = [
-              [
-                detail.latitude,
-                detail.longitude,
-                detail.altitude,
-                detail.angle,
-                detail.satellites,
-                detail.speed,
-                detail2.value,
-                detail3.value,
-                detail4.value,
-                detail5.value,
-                imei,
-                JSON.stringify(donneGps),
-                codeunique
-              ]
-            ];
-
-            await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [detailsData]);
           } else {
             console.log("Lat, log are 0, no insertion");
           }
@@ -110,6 +113,32 @@ const server = net.createServer((c) => {
     }
   });
 });
+
+// Function to insert tracking data into the database
+async function insertTrackingData(detail, donneGps, imei, codeunique) {
+  try {
+    const detailsData = [
+      [
+        detail.latitude,
+        detail.longitude,
+        detail.altitude,
+        detail.angle,
+        detail.satellites,
+        detail.speed,
+        donneGps.ioElements[0]?.value,
+        donneGps.ioElements[1]?.value,
+        donneGps.ioElements[2]?.value,
+        donneGps.ioElements[5]?.value,
+        imei,
+        JSON.stringify(donneGps),
+        codeunique
+      ]
+    ];
+    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [detailsData]);
+  } catch (error) {
+    console.error("Error inserting tracking data: ", error);
+  }
+}
 
 // Server listening
 server.listen(2354, '141.94.194.193', () => {
