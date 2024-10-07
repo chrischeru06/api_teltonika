@@ -15,13 +15,13 @@ const util = require("util");
 // Create a connection to the database
 let server = net.createServer((c) => {
   console.log("client connected");
-  const connection = mysql.createConnection({
-    host: "localhost",//'51.83.236.148
-    port: "36120",
-    user: "cartrackingdvs",
-    password: "63p85x:RsU+A/Dd(e7",
-    database: "car_trucking",
-  });
+const connection = mysql.createConnection({
+  host: "localhost",
+  port: "3306",
+  user: "cartrackingdvs",
+  password: "63p85x:RsU+A/Dd(e7",
+  database: "car_trucking",
+});
 
   // open the MySQL connection
   connection.connect((error) => {
@@ -226,6 +226,6 @@ let server = net.createServer((c) => {
 
 });
 
-server.listen(2354, '51.83.236.148', () => {
+server.listen(2354, '141.94.194.193', () => {
   console.log("Server started ont 2354");
 });
