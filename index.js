@@ -1,168 +1,231 @@
-/** 
- * Written by Cerubala Christian Wann'y 
- * email: wanny@mediabox.bi 
- * tel: +25762442698 
- * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server 
+/**Writen by Cerubala Christian Wann'y
+ * email:wanny@mediabox.bi
+ * tel:+25762442698
+ * this code is a api which helps to take data from teltonika devises and insert the data into a mysql server
  */
 
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const binutils = require('binutils64');
+const path = require('path');
+
 const mysql = require("mysql");
 const util = require("util");
 
 // Create a connection to the database
 let server = net.createServer((c) => {
-  console.log("Client connected");
-
+  console.log("client connected");
   const connection = mysql.createConnection({
-    host: "localhost",
-    port: "3306",
+    host: "localhost",//'51.83.236.148
+    port: "36120",
     user: "cartrackingdvs",
     password: "63p85x:RsU+A/Dd(e7",
     database: "car_trucking",
   });
 
-  // Open the MySQL connection
+  // open the MySQL connection
   connection.connect((error) => {
     if (error) throw error;
-    console.log("Successfully connected to the database.");
+    console.log("Successfully connected to the database: ");
   });
-
   const query = util.promisify(connection.query).bind(connection);
-
   c.on('end', () => {
-    console.log("Client disconnected");
-    connection.end();
+    console.log("client disconnected");
   });
 
   function generateUniqueCode() {
-    const timestamp = new Date().getTime().toString(16); // Use timestamp in base 16
-    const randomNum = Math.floor(Math.random() * 1000); // Generate a random number between 0 and 999
-    return timestamp + randomNum;
+    const timestamp = new Date().getTime().toString(16); // Utilisation du timestamp en base 16
+    const randomNum = Math.floor(Math.random() * 1000); // Génération d'un nombre aléatoire entre 0 et 999
+    const uniqueCode = timestamp + randomNum;
+
+    return uniqueCode;
   }
-
-  let imei;
-  let currentCodeUnique = null;
-  let lastIgnition = null;
-  let lastIgnitionChangeTime = null;
-  let lastSpeedInsertTime = null;
-  let lastInsertTime = null;
-
-  async function insertTrackingData(detail, data, imei, codeunique, isTemporary) {
-    const detailsData = [
-      [
-        detail.latitude,
-        detail.longitude,
-        detail.altitude,
-        detail.angle,
-        detail.satellites,
-        detail.speed,
-        data.ioElements[0]?.value || 0, // Ignition
-        data.ioElements[1]?.value || 0, // Movement
-        data.ioElements[2]?.value || 0, // GNSS status
-        data.ioElements[5]?.value || 0, // Seat belt status
-        imei,
-        JSON.stringify(data),
-        codeunique,
-        isTemporary ? 1 : 0 // Flag to mark temporary records
-      ]
-    ];
-
-    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE, temporary) VALUES ?', [detailsData]);
-  }
-
-  async function deleteTemporaryData(imei) {
-    await query('DELETE FROM tracking_data WHERE device_uid = ? AND temporary = 1', [imei]);
-  }
-
+  var imei;
   c.on('data', async (data) => {
-    try {
-      let buffer = data;
-      let parser = new Parser(buffer);
 
-      if (parser.isImei) {
-        imei = parser.imei;
-        console.log("IMEI:", imei);
-        c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
-      } else {
-        let avl = parser.getAvl();
-        console.log(avl);
-        let donneGps = avl?.records?.map(({ gps, timestamp, ioElements }) => ({ gps, timestamp, ioElements }));
+    let buffer = data;
+    //console.log(buffer);
+    let parser = new Parser(buffer);
+    // console.log(parser);
 
-        if (donneGps && donneGps.length > 0) {
-          let detail = donneGps[0].gps;
-          let ignition = donneGps[0].ioElements[0]?.value;
-          let speed = detail.speed;
+    if (parser.isImei) {
+      imei = parser.imei;
+      console.log("IMEI:", imei);
+      // Use the IMEI value as needed
+      c.write(Buffer.alloc(1, 1)); // send ACK for IMEI
+    } else {
+      let avl = parser.getAvl();
+      console.log(avl);
+      var myJsonString = JSON.stringify(avl.records);
+      console.log(myJsonString)
 
-          if (detail.latitude !== 0 && detail.longitude !== 0) {
-            const currentTime = new Date().getTime();
 
-            if (lastIgnition !== null && lastIgnition !== ignition) {
-              if (ignition === 1) {
-                // L'ignition passe de 0 à 1 - début de la course
-                currentCodeUnique = generateUniqueCode();
+      var donneGps = avl?.records?.map(({ gps, timestamp, ioElements }) => {
+        return { gps, timestamp, ioElements }
 
-                // Enregistrer les premières données immédiatement
-                await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
-                console.log("Nouveau CODE_COURSE généré et première donnée enregistrée.");
+      }
+      );
+      if (donneGps) {
 
-                lastIgnitionChangeTime = currentTime;
-              } else if (ignition === 0) {
-                // L'ignition passe de 1 à 0 - fin de la course
-                currentCodeUnique = generateUniqueCode();
-                console.log("Ignition est passée à 0, fin de course, nouveau CODE_COURSE généré.");
-              }
+        //console.log(donneGps[0].ioElements);
+        var detail = donneGps[0].gps;
+        var detail2 = donneGps[0].ioElements[0];
+        var detail3 = donneGps[0].ioElements[1];
+        var detail4 = donneGps[0].ioElements[2];
+        var detail5 = donneGps[0].ioElements[5];
+        // var detail6 = donneGps[0].ioElements[6];
+        console.log("emei1afetrdonnEEs:", imei);
+        console.log(donneGps[0].gps);
+        console.log(donneGps[0].timestamp);
+        console.log(donneGps[0].ioElements[0]);
+        console.log(donneGps[0].ioElements[1]);
+        // console.log(donneGps[0].ioElements[2]);
+        // console.log(donneGps[0].ioElements[5]);
+        //console.log(donneGps[0].ioElements[6]);
+        //console.log(donneGps[0].ioElements[5]);
 
-              // Vérifier si le changement d'ignition s'est produit en moins d'une minute
-              if (lastIgnitionChangeTime && currentTime - lastIgnitionChangeTime < 60 * 1000) {
-                await deleteTemporaryData(imei);
-                console.log("Changement d'ignition trop rapide, suppression des données temporaires.");
-                return;
-              }
+        //  console.log(donneGps[0].ioElements);
 
-              lastIgnition = ignition;
-            }
+        //console.log(donneGps[0].gps)
 
-            // Handle subsequent data points based on the conditions
-            if (ignition === 1) {
-              if (speed === 0) {
-                console.log("Vitesse est 0, attendre avant enregistrement.");
-              } else {
-                // Insert data every 5 seconds if speed is non-zero
-                if (!lastSpeedInsertTime || currentTime - lastSpeedInsertTime >= 5 * 1000) {
-                  await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
-                  lastSpeedInsertTime = currentTime;
-                  console.log("Ignition 1 et vitesse > 0, données enregistrées.");
-                }
-              }
-            } else if (ignition === 0 && speed === 0) {
-              // Insert data every 10 minutes
-              if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
-                await insertTrackingData(detail, donneGps[0], imei, currentCodeUnique, false);
-                lastInsertTime = currentTime;
-                console.log("Ignition 0 et vitesse 0, données enregistrées toutes les 10 minutes.");
-              }
+        //console.log(JSON.stringify(avl))
+
+        const detailsData = []
+
+        if (detail.latitude != 0 && detail.longitude != 0) {
+          const lastData = (await query('SELECT * FROM tracking_data WHERE  device_uid =? ORDER BY date DESC limit 1', [imei]))[0]
+          let codeunique
+          if (lastData) {
+            codeunique = lastData.CODE_COURSE
+            if (lastData.ignition != detail2.value) {
+              codeunique = generateUniqueCode();
             }
           } else {
-            console.log("Lat, log are 0, no insertion");
+            codeunique = generateUniqueCode();
           }
+          var canInsertData = false
+            if(detail2.value== 0) { // la voiture vient de s'arreter
+              if(!lastData || lastData.ignition == 1) { // eviter d'enregistrer plusieurs 0 en mme temps
+                // insert data
+                canInsertData = true
+              }
+            } else if(detail2.value== 1) { // la voiture vient de demarrer
+              if(detail.speed > 0 || (!lastData || lastData.ignition == 0)) { // j'insere uniquement si c'est le last ignition etait a 0 pour inserer pour la premiere fois et les autres lorsque la vitesse > 0
+                // insert data
+                canInsertData = true
+              }
+            }
+          detailsData.push([
+            detail.latitude,
+            detail.longitude,
+            detail.altitude,
+            detail.angle,
+            detail.satellites,
+            detail.speed,
+            detail2.value,
+            detail3.value,
+            detail4.value,
+            detail5.value,
+            //detail6.value,
+            imei,
+            JSON.stringify(myJsonString),
+            codeunique
+          ])
+          if(canInsertData) {
+            query('INSERT INTO tracking_data(latitude, longitude,altitude,angle,satellites, vitesse,ignition,mouvement,gnss_statut,CEINTURE,device_uid,json, CODE_COURSE) VALUES ?', [detailsData])
+          }
+
+          // Perform a query to select data
+          var id_device_uid = imei;
+          // connection.query(
+
+          //   "SELECT id, ignition FROM tracking_data WHERE device_uid IN (SELECT device_uid FROM tracking_data) ORDER BY id ASC",
+
+          //   async (error, results, fields) => {
+          //     if (error) {
+          //       console.error("Error retrieving data: " + error.stack);
+          //       return;
+          //     }
+          //     // Function to update data
+          //     function updateData(id, codeunique) {
+          //       return new Promise((resolve, reject) => {
+          //         connection.query(
+          //           "UPDATE tracking_data SET CODE_COURSE = ? WHERE id = ?",
+          //           [codeunique, id],
+          //           (error, results, fields) => {
+          //             if (error) {
+          //               reject(error);
+          //             } else {
+          //               resolve(results);
+          //             }
+          //           }
+          //         );
+          //       });
+          //     }
+
+
+
+          //     let course = 0;
+          //     let valueurfinal = 0;
+          //     // Process the retrieved data
+          //     let codeunique = generateUniqueCode();
+
+          //     for (let i = 0; i < results.length; i++) {
+          //       if (results[i].ignition == 1 && valueurfinal == 0) {
+          //         codeunique = generateUniqueCode();
+          //         course++;
+          //       }
+          //       //to check if the car in on parkcking inorder to gererate the new code
+          //       else if (results[i].ignition == 0 && valueurfinal == 1) {
+          //         codeunique = generateUniqueCode();
+          //         course++;
+          //       }
+          //       valueurfinal = results[i].ignition;
+
+          //       try {
+          //         await updateData(results[i].id, codeunique);
+          //         // console.log("Update successful for id: ", results[i].id);
+          //       } catch (error) {
+          //         console.error("Error updating data: " + error.stack);
+          //       }
+          //     }
+          //     // console.log(course);
+
+          //   }
+          // );
+
+
+
+
+
+        }
+        else {
+          console.log("Lat,log 00,no insertion");
         }
 
-        let writer = new binutils.BinaryWriter();
-        writer.WriteInt32(avl.number_of_data);
-        let response = writer.ByteBuffer;
 
-        c.write(response); // Send ACK for AVL DATA
-        c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+
       }
-    } catch (error) {
-      console.error("Error processing data: ", error);
+
+
+      let writer = new binutils.BinaryWriter();
+      writer.WriteInt32(avl.number_of_data);
+
+
+      let response = writer.ByteBuffer;
+
+      c.write(response); // send ACK for AVL DATA
+      //console.log(test);
+
+      c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+
+      //c.write("000000000000000F0C010500000007676574696E666F0100004312"); 
     }
+
   });
 
 });
 
-server.listen(2354, '141.94.194.193', () => {
-  console.log("Server started on port 2354");
+server.listen(2354, '51.83.236.148', () => {
+  console.log("Server started ont 2354");
 });
