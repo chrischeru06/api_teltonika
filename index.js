@@ -22,7 +22,6 @@ let server = net.createServer((c) => {
     password: "63p85x:RsU+A/Dd(e7",
     database: "car_trucking",
   });
-
   // open the MySQL connection
   connection.connect((error) => {
     if (error) throw error;
@@ -79,15 +78,25 @@ let server = net.createServer((c) => {
         console.log(donneGps[0].timestamp);
         console.log(donneGps[0].ioElements[0]);
         console.log(donneGps[0].ioElements[1]);
+        // console.log(donneGps[0].ioElements[2]);
+        // console.log(donneGps[0].ioElements[5]);
+        //console.log(donneGps[0].ioElements[6]);
+        //console.log(donneGps[0].ioElements[5]);
+
+        //  console.log(donneGps[0].ioElements);
+
+        //console.log(donneGps[0].gps)
+
+        //console.log(JSON.stringify(avl))
 
         const detailsData = []
 
         if (detail.latitude != 0 && detail.longitude != 0) {
-          const lastData = (await query('SELECT * FROM tracking_data WHERE  device_uid =? ORDER BY date DESC limit 1', [imei]))[0]
-          let codeunique
+          const lastData = (await query('SELECT * FROM tracking_data WHERE  device_uid =? ORDER BY date DESC limit 1', [imei]))[0] 
+              let codeunique
           if (lastData) {
             codeunique = lastData.CODE_COURSE
-            if (lastData.ignition != detail2.value) {
+            if(lastData.ignition != detail2.value) {
               codeunique = generateUniqueCode();
             }
           } else {
@@ -104,27 +113,104 @@ let server = net.createServer((c) => {
             detail3.value,
             detail4.value,
             detail5.value,
+            //detail6.value,
             imei,
             JSON.stringify(myJsonString),
             codeunique
           ])
           query('INSERT INTO tracking_data(latitude, longitude,altitude,angle,satellites, vitesse,ignition,mouvement,gnss_statut,CEINTURE,device_uid,json, CODE_COURSE) VALUES ?', [detailsData])
 
+          // Perform a query to select data
           var id_device_uid = imei;
+          // connection.query(
+
+          //   "SELECT id, ignition FROM tracking_data WHERE device_uid IN (SELECT device_uid FROM tracking_data) ORDER BY id ASC",
+
+          //   async (error, results, fields) => {
+          //     if (error) {
+          //       console.error("Error retrieving data: " + error.stack);
+          //       return;
+          //     }
+          //     // Function to update data
+          //     function updateData(id, codeunique) {
+          //       return new Promise((resolve, reject) => {
+          //         connection.query(
+          //           "UPDATE tracking_data SET CODE_COURSE = ? WHERE id = ?",
+          //           [codeunique, id],
+          //           (error, results, fields) => {
+          //             if (error) {
+          //               reject(error);
+          //             } else {
+          //               resolve(results);
+          //             }
+          //           }
+          //         );
+          //       });
+          //     }
+
+
+
+          //     let course = 0;
+          //     let valueurfinal = 0;
+          //     // Process the retrieved data
+          //     let codeunique = generateUniqueCode();
+
+          //     for (let i = 0; i < results.length; i++) {
+          //       if (results[i].ignition == 1 && valueurfinal == 0) {
+          //         codeunique = generateUniqueCode();
+          //         course++;
+          //       }
+          //       //to check if the car in on parkcking inorder to gererate the new code
+          //       else if (results[i].ignition == 0 && valueurfinal == 1) {
+          //         codeunique = generateUniqueCode();
+          //         course++;
+          //       }
+          //       valueurfinal = results[i].ignition;
+
+          //       try {
+          //         await updateData(results[i].id, codeunique);
+          //         // console.log("Update successful for id: ", results[i].id);
+          //       } catch (error) {
+          //         console.error("Error updating data: " + error.stack);
+          //       }
+          //     }
+          //     // console.log(course);
+
+          //   }
+          // );
+
+
+
+
 
         }
         else {
           console.log("Lat,log 00,no insertion");
         }
+
+
+
       }
+
+
       let writer = new binutils.BinaryWriter();
       writer.WriteInt32(avl.number_of_data);
+
+
       let response = writer.ByteBuffer;
+
       c.write(response); // send ACK for AVL DATA
+      //console.log(test);
+
       c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+
+      //c.write("000000000000000F0C010500000007676574696E666F0100004312"); 
     }
+
   });
+
 });
+
 server.listen(2354, '141.94.194.193', () => {
   console.log("Server started ont 2354");
 });
