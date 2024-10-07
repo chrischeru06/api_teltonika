@@ -12,6 +12,7 @@ const util = require("util");
 
 let lastInsertTime = null;
 let lastIgnitionChangeTime = null;
+let lastSpeedInsertTime = null;
 
 // MySQL Pool Creation
 const pool = mysql.createPool({
@@ -94,6 +95,12 @@ const server = net.createServer((c) => {
                   if (lastData.speed !== 0) {
                     await insertTrackingData(detail, donneGps[0], imei, codeunique);
                   }
+                } else if (ignition === 1 && speed !== 0) {
+                  // Insert data every 5 seconds if speed is non-zero
+                  if (!lastSpeedInsertTime || currentTime - lastSpeedInsertTime >= 5 * 1000) {
+                    await insertTrackingData(detail, donneGps[0], imei, codeunique);
+                    lastSpeedInsertTime = currentTime;
+                  }
                 } else if (ignition === 0 && speed === 0) {
                   // Insert data every 10 minutes
                   if (!lastInsertTime || currentTime - lastInsertTime >= 10 * 60 * 1000) {
@@ -155,4 +162,3 @@ async function insertTrackingData(detail, donneGps, imei, codeunique) {
 server.listen(2354, '141.94.194.193', () => {
   console.log("Server started on port 2354");
 });
-
