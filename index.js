@@ -24,7 +24,8 @@ const query = util.promisify(connection.query).bind(connection);
 
 let lastIgnitionChange = null;
 let intervalId = null;
-let sendDataInterval = 5 * 1000; // 5 seconds by default
+let sendDataInterval = 5 * 1000; // 5 secondes par défaut
+let sentDataWithSpeedZero = false; // Flag pour contrôler l'envoi unique avec vitesse = 0
 
 // Fonction pour envoyer les données vers la base de données
 async function sendData(detailsData) {
@@ -71,15 +72,27 @@ let server = net.createServer((c) => {
       
       if (imei && gpsData.length) {
         let currentIgnition = ignition;
+
+        // Cas 1: Ignition = 1, vitesse > 0, envoyer toutes les 5 secondes
         if (speed > 0 && ignition === 1 && shouldSendData(lastIgnition, currentIgnition)) {
+          sentDataWithSpeedZero = false; // Réinitialiser
           clearInterval(intervalId);
           sendDataInterval = 5 * 1000;
           intervalId = setInterval(() => {
             sendData(gpsData); 
           }, sendDataInterval);
-        } else if (ignition === 0 && speed === 0) {
+        } 
+        // Cas 2: Ignition = 1, vitesse = 0, envoyer une seule fois
+        else if (ignition === 1 && speed === 0 && !sentDataWithSpeedZero) {
           clearInterval(intervalId);
-          sendDataInterval = 10 * 60 * 1000; // Envoi toutes les 10 minutes
+          sendData(gpsData); // Envoyer une seule fois
+          sentDataWithSpeedZero = true; // Empêcher d'envoyer à nouveau jusqu'à changement
+        }
+        // Cas 3: Ignition = 0, vitesse = 0, envoyer toutes les 10 minutes
+        else if (ignition === 0 && speed === 0) {
+          sentDataWithSpeedZero = false; // Réinitialiser
+          clearInterval(intervalId);
+          sendDataInterval = 10 * 60 * 1000; // 10 minutes
           intervalId = setInterval(() => {
             sendData(gpsData); 
           }, sendDataInterval);
