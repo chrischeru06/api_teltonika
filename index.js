@@ -1,11 +1,19 @@
+/** 
+ * Written by Cerubala Christian Wann'y 
+ * email: wanny@mediabox.bi 
+ * tel: +25762442698 
+ * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server 
+ */
+
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const binutils = require('binutils64');
 const mysql = require("mysql");
 const util = require("util");
 
+// Create a connection to the database
 let server = net.createServer((c) => {
-  console.log("client connected");
+  console.log("Client connected");
 
   const connection = mysql.createConnection({
     host: "localhost",
@@ -15,21 +23,33 @@ let server = net.createServer((c) => {
     database: "car_trucking",
   });
 
+  // Open the MySQL connection
   connection.connect((error) => {
     if (error) throw error;
-    console.log("Successfully connected to the database");
+    console.log("Successfully connected to the database.");
   });
 
   const query = util.promisify(connection.query).bind(connection);
+
   c.on('end', () => {
-    console.log("client disconnected");
+    console.log("Client disconnected");
+    connection.end();
   });
 
   function generateUniqueCode() {
-    const timestamp = new Date().getTime().toString(16);
-    const randomNum = Math.floor(Math.random() * 1000);
-    return timestamp + randomNum;
+    const timestamp = new Date().getTime().toString(16); // Use timestamp in base 16
+    const randomNum = Math.floor(Math.random() * 1000); // Generate a random number between 0 and 999
+    const uniqueCode = timestamp + randomNum;
+
+    return uniqueCode;
   }
+
+  let imei;
+  let currentCodeUnique = null;
+  let lastIgnition = null;
+  let lastIgnitionChangeTime = null;
+  let lastSpeedInsertTime = null;
+  let lastInsertTime = null;
 
   async function insertTrackingData(detail, data, imei, codeunique, isTemporary) {
     const detailsData = [
@@ -51,19 +71,12 @@ let server = net.createServer((c) => {
       ]
     ];
 
-    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, speed, ignition, movement, gnss_status, seat_belt, device_uid, json, CODE_COURSE, is_temporary) VALUES ?', [detailsData]);
+    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE, temporary) VALUES ?', [detailsData]);
   }
 
   async function deleteTemporaryData(imei) {
-    await query('DELETE FROM tracking_data WHERE device_uid = ? AND is_temporary = 1', [imei]);
+    await query('DELETE FROM tracking_data WHERE device_uid = ? AND temporary = 1', [imei]);
   }
-
-  let imei;
-  let currentCodeUnique = null;
-  let lastIgnition = null;
-  let lastIgnitionChangeTime = null;
-  let lastSpeedInsertTime = null;
-  let lastInsertTime = null;
 
   c.on('data', async (data) => {
     try {
@@ -139,6 +152,7 @@ let server = net.createServer((c) => {
       console.error("Error processing data: ", error);
     }
   });
+
 });
 
 server.listen(2354, '141.94.194.193', () => {
