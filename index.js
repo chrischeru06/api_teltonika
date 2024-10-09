@@ -23,6 +23,7 @@ const connection = mysql.createConnection({
   database: "car_trucking",
 });
 
+
   // open the MySQL connection
   connection.connect((error) => {
     if (error) throw error;
@@ -226,6 +227,6 @@ const connection = mysql.createConnection({
 
 });
 
-server.listen(2354, '141.94.194.193'', () => {
+server.listen(2354, '141.94.194.193', () => {
   console.log("Server started ont 2354");
 });
