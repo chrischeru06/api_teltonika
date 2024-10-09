@@ -105,12 +105,16 @@ const connection = mysql.createConnection({
             codeunique = generateUniqueCode();
           }
           var canInsertData = false
+          var canInsertFateZero = false
             if(detail2.value== 0) { // la voiture vient de s'arreter
               if(!lastData || lastData.ignition == 1) { // eviter d'enregistrer plusieurs 0 en mme temps
                 // insert data
                 canInsertData = true
               }
             } else if(detail2.value== 1) { // la voiture vient de demarrer
+              if(lastData.ignition == 0) {
+                canInsertFateZero = true
+              }
               if(detail.speed > 0 || (!lastData || lastData.ignition == 0)) { // j'insere uniquement si c'est le last ignition etait a 0 pour inserer pour la premiere fois et les autres lorsque la vitesse > 0
                 // insert data
                 canInsertData = true
@@ -132,6 +136,25 @@ const connection = mysql.createConnection({
             JSON.stringify(myJsonString),
             codeunique
           ])
+          if(canInsertFateZero) {
+            query('INSERT INTO tracking_data(latitude, longitude,altitude,angle,satellites, vitesse,ignition,mouvement,gnss_statut,CEINTURE,device_uid,json, CODE_COURSE) VALUES ?', [[[
+              detail.latitude,
+              detail.longitude,
+              detail.altitude,
+              detail.angle,
+              detail.satellites,
+              detail.speed,
+              0,
+              detail3.value,
+              detail4.value,
+              detail5.value,
+              //detail6.value,
+              imei,
+              JSON.stringify(myJsonString),
+              codeunique
+            ]
+          ]])
+          }
           if(canInsertData) {
             query('INSERT INTO tracking_data(latitude, longitude,altitude,angle,satellites, vitesse,ignition,mouvement,gnss_statut,CEINTURE,device_uid,json, CODE_COURSE) VALUES ?', [detailsData])
           }
