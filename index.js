@@ -112,10 +112,11 @@ let server = net.createServer((c) => {
                   detail.altitude,
                   detail.angle,
                   detail.satellites,
-                  detail3.value, // vitesse actuelle
+                  detail.speed,
                   detail2.value, // ignition à 1
-                  detail4.value, // mouvement
-                  detail5.value, // ceinture
+                  detail3.value,// mouvement
+                  detail4.value, 
+                  detail5.value,
                   imei,
                   JSON.stringify(avl.records),
                   codeunique // Nouveau CODE_COURSE
@@ -126,18 +127,19 @@ let server = net.createServer((c) => {
             // Premier enregistrement
             codeunique = generateUniqueCode();
             await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES ?', [[[
-              detail.latitude,
-              detail.longitude,
-              detail.altitude,
-              detail.angle,
-              detail.satellites,
-              detail3.value, // vitesse actuelle
-              detail2.value, // ignition
-              detail4.value, // mouvement
-              detail5.value, // ceinture
-              imei,
-              JSON.stringify(avl.records),
-              codeunique // Nouveau CODE_COURSE
+                  detail.latitude,
+                  detail.longitude,
+                  detail.altitude,
+                  detail.angle,
+                  detail.satellites,
+                  detail.speed,
+                  detail2.value, // ignition à 1
+                  detail3.value,// mouvement
+                  detail4.value, 
+                  detail5.value,
+                  imei,
+                  JSON.stringify(avl.records),
+                  codeunique // Nouveau CODE_COURSE
             ]]]);
           }
         } else {
