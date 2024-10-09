@@ -143,15 +143,15 @@ const connection = mysql.createConnection({
               detail.altitude,
               detail.angle,
               detail.satellites,
-              detail.speed,
               0,
-              detail3.value,
+              0,
+              0,
               detail4.value,
               detail5.value,
               //detail6.value,
               imei,
               JSON.stringify(myJsonString),
-              codeunique
+              lastData.CODE_COURSE
             ]
           ]])
           }
