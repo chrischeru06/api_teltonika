@@ -15,7 +15,7 @@ const util = require("util");
 // Create a connection to the database
 let server = net.createServer((c) => {
   console.log("client connected");
-const connection = mysql.createConnection({
+  const connection = mysql.createConnection({
   host: "localhost",
   port: "3306",
   user: "cartrackingdvs",
@@ -93,28 +93,16 @@ const connection = mysql.createConnection({
         const detailsData = []
 
         if (detail.latitude != 0 && detail.longitude != 0) {
-          const lastData = (await query('SELECT * FROM tracking_data WHERE  device_uid =? ORDER BY date DESC limit 1', [imei]))[0]
-          let codeunique
+          const lastData = (await query('SELECT * FROM tracking_data WHERE  device_uid =? ORDER BY date DESC limit 1', [imei]))[0] 
+              let codeunique
           if (lastData) {
             codeunique = lastData.CODE_COURSE
-            if (lastData.ignition != detail2.value) {
+            if(lastData.ignition != detail2.value) {
               codeunique = generateUniqueCode();
             }
           } else {
             codeunique = generateUniqueCode();
           }
-          var canInsertData = false
-            if(detail2.value== 0) { // la voiture vient de s'arreter
-              if(!lastData || lastData.ignition == 1) { // eviter d'enregistrer plusieurs 0 en mme temps
-                // insert data
-                canInsertData = true
-              }
-            } else if(detail2.value== 1) { // la voiture vient de demarrer
-              if(detail.speed > 0 || (!lastData || lastData.ignition == 0)) { // j'insere uniquement si c'est le last ignition etait a 0 pour inserer pour la premiere fois et les autres lorsque la vitesse > 0
-                // insert data
-                canInsertData = true
-              }
-            }
           detailsData.push([
             detail.latitude,
             detail.longitude,
@@ -131,9 +119,7 @@ const connection = mysql.createConnection({
             JSON.stringify(myJsonString),
             codeunique
           ])
-          if(canInsertData) {
-            query('INSERT INTO tracking_data(latitude, longitude,altitude,angle,satellites, vitesse,ignition,mouvement,gnss_statut,CEINTURE,device_uid,json, CODE_COURSE) VALUES ?', [detailsData])
-          }
+          query('INSERT INTO tracking_data(latitude, longitude,altitude,angle,satellites, vitesse,ignition,mouvement,gnss_statut,CEINTURE,device_uid,json, CODE_COURSE) VALUES ?', [detailsData])
 
           // Perform a query to select data
           var id_device_uid = imei;
