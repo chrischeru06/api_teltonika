@@ -34,9 +34,11 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable pour suivre l'état de l'ignition
+  let dataInterval = null; // Variable pour stocker l'intervalle d'enregistrement
 
   c.on('end', () => {
     console.log("Client disconnected");
+    clearInterval(dataInterval); // Nettoyage de l'intervalle si le client se déconnecte
   });
 
   c.on('data', async (data) => {
@@ -55,25 +57,28 @@ const server = net.createServer((c) => {
         const ioElements = donneGps[0].ioElements;
         const currentIgnition = ioElements[0].value; // Supposons que l'ignition soit la première valeur de ioElements
 
-        // Gérer les transitions d'ignition
+        // Vérifier les changements d'état de l'ignition
         if (ignitionState === null || currentIgnition !== ignitionState) {
+          // Si l'ignition passe de 1 à 0
           if (ignitionState === 1 && currentIgnition === 0) {
-            // Enregistrer la donnée lorsque l'ignition passe de 1 à 0
             await saveData(imei, donneGps[0], currentIgnition);
             console.log("Data recorded with ignition = 0.");
+            clearInterval(dataInterval); // Arrêter l'enregistrement
           }
 
           ignitionState = currentIgnition; // Met à jour l'état de l'ignition
 
           if (ignitionState === 1) {
-            console.log("Ignition is ON, will continue to record data.");
-          }
-        }
+            console.log("Ignition is ON, will record data every 5 seconds.");
 
-        // Enregistrer les données uniquement si l'ignition est à 1
-        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Data recorded with ignition = 1.");
+            // Démarrer un intervalle pour enregistrer les données toutes les 5 secondes
+            if (!dataInterval) {
+              dataInterval = setInterval(async () => {
+                await saveData(imei, donneGps[0], ignitionState);
+                console.log("Data recorded with ignition = 1.");
+              }, 5000); // 5000 ms = 5 secondes
+            }
+          }
         }
       }
 
