@@ -38,12 +38,28 @@ const server = net.createServer((c) => {
   let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
   let lastSpeed = null; // Variable pour stocker la dernière vitesse
 
+  c.setTimeout(60000); // 60 secondes de timeout
+
   c.on('end', () => {
     console.log("Client disconnected");
     clearInterval(dataInterval); // Nettoyage de l'intervalle si le client se déconnecte
   });
 
+  c.on('error', (err) => {
+    console.error("Socket error:", err);
+  });
+
+  c.on('timeout', () => {
+    console.log("Connection timed out");
+    c.end(); // Ferme la connexion proprement
+  });
+
   c.on('data', async (data) => {
+    if (!c.writable) {
+      console.error("Connection is not writable.");
+      return;
+    }
+
     const parser = new Parser(data);
     
     if (parser.isImei) {
