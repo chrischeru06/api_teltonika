@@ -35,6 +35,7 @@ const server = net.createServer((c) => {
 
   let ignitionState = null; // Variable pour suivre l'état de l'ignition
   let dataInterval = null; // Variable pour stocker l'intervalle d'enregistrement
+  let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -45,17 +46,17 @@ const server = net.createServer((c) => {
     const parser = new Parser(data);
     
     if (parser.isImei) {
-      const imei = parser.imei;
+      imei = parser.imei; // Assigne la valeur à la variable imei
       console.log("IMEI:", imei);
       c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
     } else {
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
-      if (donneGps.length > 0) {
+      if (donneGps && donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0].value; // Supposons que l'ignition soit la première valeur de ioElements
+        const currentIgnition = ioElements[0].value;
 
         // Vérifier les changements d'état de l'ignition
         if (ignitionState === null || currentIgnition !== ignitionState) {
@@ -63,7 +64,7 @@ const server = net.createServer((c) => {
           if (ignitionState === 1 && currentIgnition === 0) {
             await saveData(imei, donneGps[0], currentIgnition);
             console.log("Data recorded with ignition = 0.");
-            clearInterval(dataInterval); // Arrêter l'enregistrement
+            clearInterval(dataInterval); // Stop recording
           }
 
           ignitionState = currentIgnition; // Met à jour l'état de l'ignition
