@@ -36,6 +36,7 @@ const server = net.createServer((c) => {
   let ignitionState = null; // Variable pour suivre l'état de l'ignition
   let dataInterval = null; // Variable pour stocker l'intervalle d'enregistrement
   let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
+  let lastSpeed = null; // Variable pour stocker la dernière vitesse
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -57,6 +58,7 @@ const server = net.createServer((c) => {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
         const currentIgnition = ioElements[0].value;
+        const currentSpeed = detail.speed; // Récupère la vitesse actuelle
 
         // Vérifier les changements d'état de l'ignition
         if (ignitionState === null || currentIgnition !== ignitionState) {
@@ -65,6 +67,7 @@ const server = net.createServer((c) => {
             await saveData(imei, donneGps[0], currentIgnition);
             console.log("Data recorded with ignition = 0.");
             clearInterval(dataInterval); // Stop recording
+            lastSpeed = null; // Réinitialise la dernière vitesse
           }
 
           ignitionState = currentIgnition; // Met à jour l'état de l'ignition
@@ -75,8 +78,12 @@ const server = net.createServer((c) => {
             // Démarrer un intervalle pour enregistrer les données toutes les 5 secondes
             if (!dataInterval) {
               dataInterval = setInterval(async () => {
-                await saveData(imei, donneGps[0], ignitionState);
-                console.log("Data recorded with ignition = 1.");
+                // Vérifie si la vitesse a changé
+                if (currentSpeed !== lastSpeed) {
+                  await saveData(imei, donneGps[0], ignitionState);
+                  console.log("Data recorded with ignition = 1 and speed changed.");
+                  lastSpeed = currentSpeed; // Met à jour la dernière vitesse
+                }
               }, 5000); // 5000 ms = 5 secondes
             }
           }
