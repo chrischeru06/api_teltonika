@@ -36,6 +36,7 @@ const server = net.createServer((c) => {
   let ignitionState = null; // Variable pour suivre l'état de l'ignition
   let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
   let lastValueWithZero = null; // Dernière valeur enregistrée avec ignition = 0
+  let zeroValues = []; // Tableau pour stocker les valeurs avec ignition = 0
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -66,21 +67,37 @@ const server = net.createServer((c) => {
           if (ignitionState === null || currentIgnition !== ignitionState) {
             // Si l'ignition passe de 1 à 0
             if (ignitionState === 1 && currentIgnition === 0) {
-              await saveData(imei, donneGps[0], currentIgnition); // Enregistrer les données avec ignition = 0
-              console.log("Data recorded with ignition = 0.");
+              // Enregistrer les trois premières valeurs avec ignition = 0
+              for (let i = 0; i < 3; i++) {
+                if (donneGps[i]) {
+                  await saveData(imei, donneGps[i], currentIgnition);
+                  console.log("Data recorded with ignition = 0.");
+                }
+              }
             }
 
             // Si l'ignition passe de 0 à 1
             if (ignitionState === 0 && currentIgnition === 1) {
-              if (lastValueWithZero) {
-                await saveData(imei, lastValueWithZero, 0); // Enregistrer la dernière valeur avec ignition = 0
-                console.log("Data recorded with last ignition = 0 before transition to 1.");
+              // Enregistrer les trois dernières valeurs avec ignition = 0
+              for (let i = zeroValues.length - 3; i < zeroValues.length; i++) {
+                if (zeroValues[i]) {
+                  await saveData(imei, zeroValues[i], 0);
+                  console.log("Data recorded with last ignition = 0 before transition to 1.");
+                }
               }
             }
 
             ignitionState = currentIgnition; // Met à jour l'état de l'ignition
             lastValueWithZero = donneGps[0]; // Met à jour la dernière valeur reçue lorsque l'ignition est à 0
             
+            // Stocker la valeur dans le tableau si l'ignition est à 0
+            if (ignitionState === 0) {
+              zeroValues.push(donneGps[0]);
+              if (zeroValues.length > 3) {
+                zeroValues.shift(); // Garder seulement les 3 dernières valeurs
+              }
+            }
+
             // Si l'ignition est à 1, commencer l'enregistrement toutes les 5 secondes
             if (ignitionState === 1) {
               console.log("Ignition is ON, will record data every 5 seconds.");
