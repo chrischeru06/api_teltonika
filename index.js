@@ -1,4 +1,4 @@
-/** Writen by Cerubala Christian Wann'y
+/** Written by Cerubala Christian Wann'y
  * email: wanny@mediabox.bi
  * tel: +25762442698
  * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
@@ -34,12 +34,11 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable pour suivre l'état de l'ignition
-  let dataInterval = null; // Variable pour stocker l'intervalle d'enregistrement
   let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
+  let lastValueWithZero = null; // Dernière valeur enregistrée avec ignition = 0
 
   c.on('end', () => {
     console.log("Client disconnected");
-    clearInterval(dataInterval); // Nettoyage de l'intervalle si le client se déconnecte
   });
 
   c.on('data', async (data) => {
@@ -62,23 +61,28 @@ const server = net.createServer((c) => {
         if (ignitionState === null || currentIgnition !== ignitionState) {
           // Si l'ignition passe de 1 à 0
           if (ignitionState === 1 && currentIgnition === 0) {
-            await saveData(imei, donneGps[0], currentIgnition);
+            await saveData(imei, donneGps[0], currentIgnition); // Enregistrer les données avec ignition = 0
             console.log("Data recorded with ignition = 0.");
-            clearInterval(dataInterval); // Stop recording
+          }
+
+          // Si l'ignition passe de 0 à 1
+          if (ignitionState === 0 && currentIgnition === 1) {
+            if (lastValueWithZero) {
+              await saveData(imei, lastValueWithZero, 0); // Enregistrer la dernière valeur avec ignition = 0
+              console.log("Data recorded with last ignition = 0 before transition to 1.");
+            }
           }
 
           ignitionState = currentIgnition; // Met à jour l'état de l'ignition
-
+          lastValueWithZero = donneGps[0]; // Met à jour la dernière valeur reçue lorsque l'ignition est à 0
+          
+          // Si l'ignition est à 1, commencer l'enregistrement toutes les 5 secondes
           if (ignitionState === 1) {
             console.log("Ignition is ON, will record data every 5 seconds.");
-
-            // Démarrer un intervalle pour enregistrer les données toutes les 5 secondes
-            if (!dataInterval) {
-              dataInterval = setInterval(async () => {
-                await saveData(imei, donneGps[0], ignitionState);
-                console.log("Data recorded with ignition = 1.");
-              }, 5000); // 5000 ms = 5 secondes
-            }
+            setInterval(async () => {
+              await saveData(imei, donneGps[0], ignitionState);
+              console.log("Data recorded with ignition = 1.");
+            }, 5000); // 5000 ms = 5 secondes
           }
         }
       }
