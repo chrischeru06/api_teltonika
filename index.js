@@ -41,56 +41,64 @@ const server = net.createServer((c) => {
     console.log("Client disconnected");
   });
 
+  c.on('error', (err) => {
+    console.error('Connection error:', err);
+  });
+
   c.on('data', async (data) => {
-    const parser = new Parser(data);
-    
-    if (parser.isImei) {
-      imei = parser.imei; // Assigne la valeur à la variable imei
-      console.log("IMEI:", imei);
-      c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
-    } else {
-      const avl = parser.getAvl();
-      const donneGps = avl.records;
+    try {
+      const parser = new Parser(data);
+      
+      if (parser.isImei) {
+        imei = parser.imei; // Assigne la valeur à la variable imei
+        console.log("IMEI:", imei);
+        c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
+      } else {
+        const avl = parser.getAvl();
+        const donneGps = avl.records;
 
-      if (donneGps && donneGps.length > 0) {
-        const detail = donneGps[0].gps;
-        const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0].value;
+        if (donneGps && donneGps.length > 0) {
+          const detail = donneGps[0].gps;
+          const ioElements = donneGps[0].ioElements;
+          const currentIgnition = ioElements[0].value;
 
-        // Vérifier les changements d'état de l'ignition
-        if (ignitionState === null || currentIgnition !== ignitionState) {
-          // Si l'ignition passe de 1 à 0
-          if (ignitionState === 1 && currentIgnition === 0) {
-            await saveData(imei, donneGps[0], currentIgnition); // Enregistrer les données avec ignition = 0
-            console.log("Data recorded with ignition = 0.");
-          }
+          // Vérifier les changements d'état de l'ignition
+          if (ignitionState === null || currentIgnition !== ignitionState) {
+            // Si l'ignition passe de 1 à 0
+            if (ignitionState === 1 && currentIgnition === 0) {
+              await saveData(imei, donneGps[0], currentIgnition); // Enregistrer les données avec ignition = 0
+              console.log("Data recorded with ignition = 0.");
+            }
 
-          // Si l'ignition passe de 0 à 1
-          if (ignitionState === 0 && currentIgnition === 1) {
-            if (lastValueWithZero) {
-              await saveData(imei, lastValueWithZero, 0); // Enregistrer la dernière valeur avec ignition = 0
-              console.log("Data recorded with last ignition = 0 before transition to 1.");
+            // Si l'ignition passe de 0 à 1
+            if (ignitionState === 0 && currentIgnition === 1) {
+              if (lastValueWithZero) {
+                await saveData(imei, lastValueWithZero, 0); // Enregistrer la dernière valeur avec ignition = 0
+                console.log("Data recorded with last ignition = 0 before transition to 1.");
+              }
+            }
+
+            ignitionState = currentIgnition; // Met à jour l'état de l'ignition
+            lastValueWithZero = donneGps[0]; // Met à jour la dernière valeur reçue lorsque l'ignition est à 0
+            
+            // Si l'ignition est à 1, commencer l'enregistrement toutes les 5 secondes
+            if (ignitionState === 1) {
+              console.log("Ignition is ON, will record data every 5 seconds.");
+              setInterval(async () => {
+                await saveData(imei, donneGps[0], ignitionState);
+                console.log("Data recorded with ignition = 1.");
+              }, 5000); // 5000 ms = 5 secondes
             }
           }
-
-          ignitionState = currentIgnition; // Met à jour l'état de l'ignition
-          lastValueWithZero = donneGps[0]; // Met à jour la dernière valeur reçue lorsque l'ignition est à 0
-          
-          // Si l'ignition est à 1, commencer l'enregistrement toutes les 5 secondes
-          if (ignitionState === 1) {
-            console.log("Ignition is ON, will record data every 5 seconds.");
-            setInterval(async () => {
-              await saveData(imei, donneGps[0], ignitionState);
-              console.log("Data recorded with ignition = 1.");
-            }, 5000); // 5000 ms = 5 secondes
-          }
         }
-      }
 
-      const writer = new binutils.BinaryWriter();
-      writer.WriteInt32(avl.number_of_data);
-      c.write(writer.ByteBuffer); // Send ACK for AVL DATA
-      c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+        const writer = new binutils.BinaryWriter();
+        writer.WriteInt32(avl.number_of_data);
+        c.write(writer.ByteBuffer); // Send ACK for AVL DATA
+        c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+      }
+    } catch (error) {
+      console.error("Error processing data:", error);
     }
   });
 });
