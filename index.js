@@ -36,30 +36,13 @@ const server = net.createServer((c) => {
   let ignitionState = null; // Variable pour suivre l'état de l'ignition
   let dataInterval = null; // Variable pour stocker l'intervalle d'enregistrement
   let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
-  let lastSpeed = null; // Variable pour stocker la dernière vitesse
-
-  c.setTimeout(60000); // 60 secondes de timeout
 
   c.on('end', () => {
     console.log("Client disconnected");
     clearInterval(dataInterval); // Nettoyage de l'intervalle si le client se déconnecte
   });
 
-  c.on('error', (err) => {
-    console.error("Socket error:", err);
-  });
-
-  c.on('timeout', () => {
-    console.log("Connection timed out");
-    c.end(); // Ferme la connexion proprement
-  });
-
   c.on('data', async (data) => {
-    if (!c.writable) {
-      console.error("Connection is not writable.");
-      return;
-    }
-
     const parser = new Parser(data);
     
     if (parser.isImei) {
@@ -74,7 +57,6 @@ const server = net.createServer((c) => {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
         const currentIgnition = ioElements[0].value;
-        const currentSpeed = detail.speed; // Récupère la vitesse actuelle
 
         // Vérifier les changements d'état de l'ignition
         if (ignitionState === null || currentIgnition !== ignitionState) {
@@ -83,7 +65,6 @@ const server = net.createServer((c) => {
             await saveData(imei, donneGps[0], currentIgnition);
             console.log("Data recorded with ignition = 0.");
             clearInterval(dataInterval); // Stop recording
-            lastSpeed = null; // Réinitialise la dernière vitesse
           }
 
           ignitionState = currentIgnition; // Met à jour l'état de l'ignition
@@ -94,12 +75,8 @@ const server = net.createServer((c) => {
             // Démarrer un intervalle pour enregistrer les données toutes les 5 secondes
             if (!dataInterval) {
               dataInterval = setInterval(async () => {
-                // Vérifie si la vitesse a changé
-                if (currentSpeed !== lastSpeed) {
-                  await saveData(imei, donneGps[0], ignitionState);
-                  console.log("Data recorded with ignition = 1 and speed changed.");
-                  lastSpeed = currentSpeed; // Met à jour la dernière vitesse
-                }
+                await saveData(imei, donneGps[0], ignitionState);
+                console.log("Data recorded with ignition = 1.");
               }, 5000); // 5000 ms = 5 secondes
             }
           }
