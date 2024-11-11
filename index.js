@@ -37,6 +37,9 @@ const server = net.createServer((c) => {
   let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
   let lastValueWithZero = null; // Dernière valeur enregistrée avec ignition = 0
   let zeroValues = []; // Tableau pour stocker les valeurs avec ignition = 0
+  let speedZeroCount = 0; // Compteur pour les valeurs avec vitesse = 0
+  let speedWasZero = false; // Indicateur si la dernière vitesse était 0
+  let lastIgnitionChangeTime = null; // Heure de la dernière transition de 0 à 1
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -62,6 +65,7 @@ const server = net.createServer((c) => {
           const detail = donneGps[0].gps;
           const ioElements = donneGps[0].ioElements;
           const currentIgnition = ioElements[0].value;
+          const currentSpeed = ioElements[5].value; // Supposons que la vitesse soit à cet index
 
           // Vérifier les changements d'état de l'ignition
           if (ignitionState === null || currentIgnition !== ignitionState) {
@@ -78,6 +82,13 @@ const server = net.createServer((c) => {
 
             // Si l'ignition passe de 0 à 1
             if (ignitionState === 0 && currentIgnition === 1) {
+              const currentTime = Date.now();
+              // Vérifier si moins d'une minute s'est écoulée depuis la dernière transition
+              if (lastIgnitionChangeTime && (currentTime - lastIgnitionChangeTime < 60000)) {
+                console.log("Data ignored: Ignition changed from 0 to 1 within a minute.");
+                return; // Ignorer les données
+              }
+
               // Enregistrer les trois dernières valeurs avec ignition = 0
               for (let i = zeroValues.length - 3; i < zeroValues.length; i++) {
                 if (zeroValues[i]) {
@@ -85,6 +96,7 @@ const server = net.createServer((c) => {
                   console.log("Data recorded with last ignition = 0 before transition to 1.");
                 }
               }
+              lastIgnitionChangeTime = currentTime; // Mettre à jour le temps de changement d'ignition
             }
 
             ignitionState = currentIgnition; // Met à jour l'état de l'ignition
@@ -97,15 +109,32 @@ const server = net.createServer((c) => {
                 zeroValues.shift(); // Garder seulement les 3 dernières valeurs
               }
             }
+          }
 
-            // Si l'ignition est à 1, commencer l'enregistrement toutes les 5 secondes
-            if (ignitionState === 1) {
-              console.log("Ignition is ON, will record data every 5 seconds.");
-              setInterval(async () => {
-                await saveData(imei, donneGps[0], ignitionState);
-                console.log("Data recorded with ignition = 1.");
-              }, 5000); // 5000 ms = 5 secondes
+          // Gestion de la vitesse
+          if (currentSpeed === 0) {
+            if (!speedWasZero) { // Si la vitesse vient de passer à 0
+              speedZeroCount = 0; // Réinitialiser le compteur
             }
+
+            if (speedZeroCount < 2) { // Enregistrer les deux premières valeurs avec vitesse = 0
+              await saveData(imei, donneGps[0], ignitionState);
+              console.log("Data recorded with speed = 0.");
+              speedZeroCount++;
+            }
+
+            speedWasZero = true; // Indiquer que la vitesse est actuellement 0
+          } else {
+            speedWasZero = false; // Réinitialiser l'indicateur si la vitesse change
+          }
+
+          // Si l'ignition est à 1, commencer l'enregistrement toutes les 5 secondes
+          if (ignitionState === 1) {
+            console.log("Ignition is ON, will record data every 5 seconds.");
+            setInterval(async () => {
+              await saveData(imei, donneGps[0], ignitionState);
+              console.log("Data recorded with ignition = 1.");
+            }, 5000); // 5000 ms = 5 secondes
           }
         }
 
