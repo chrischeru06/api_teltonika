@@ -93,10 +93,16 @@ let server = net.createServer((c) => {
         const detailsData = []
 
         if (detail.latitude != 0 && detail.longitude != 0) {
-         
-            let codeunique
+          const lastData = (await query('SELECT * FROM tracking_data WHERE  device_uid =? ORDER BY date DESC limit 1', [imei]))[0] 
+              let codeunique
+          if (lastData) {
+            codeunique = lastData.CODE_COURSE
+            if(lastData.ignition != detail2.value) {
+              codeunique = generateUniqueCode();
+            }
+          } else {
             codeunique = generateUniqueCode();
-        
+          }
           detailsData.push([
             detail.latitude,
             detail.longitude,
@@ -117,62 +123,62 @@ let server = net.createServer((c) => {
 
           // Perform a query to select data
           var id_device_uid = imei;
-           connection.query(
+          // connection.query(
 
-             "SELECT id, ignition FROM tracking_data WHERE device_uid IN (SELECT device_uid FROM tracking_data) ORDER BY id ASC",
+          //   "SELECT id, ignition FROM tracking_data WHERE device_uid IN (SELECT device_uid FROM tracking_data) ORDER BY id ASC",
 
-             async (error, results, fields) => {
-               if (error) {
-                 console.error("Error retrieving data: " + error.stack);
-                 return;
-               }
-               // Function to update data
-               function updateData(id, codeunique) {
-                 return new Promise((resolve, reject) => {
-                   connection.query(
-                     "UPDATE tracking_data SET CODE_COURSE = ? WHERE id = ?",
-                     [codeunique, id],
-                     (error, results, fields) => {
-                      if (error) {
-                         reject(error);
-                       } else {
-                         resolve(results);
-                       }
-                     }
-                   );
-                 });
-               }
+          //   async (error, results, fields) => {
+          //     if (error) {
+          //       console.error("Error retrieving data: " + error.stack);
+          //       return;
+          //     }
+          //     // Function to update data
+          //     function updateData(id, codeunique) {
+          //       return new Promise((resolve, reject) => {
+          //         connection.query(
+          //           "UPDATE tracking_data SET CODE_COURSE = ? WHERE id = ?",
+          //           [codeunique, id],
+          //           (error, results, fields) => {
+          //             if (error) {
+          //               reject(error);
+          //             } else {
+          //               resolve(results);
+          //             }
+          //           }
+          //         );
+          //       });
+          //     }
 
 
 
-               let course = 0;
-               let valueurfinal = 0;
-               // Process the retrieved data
-               let codeunique = generateUniqueCode();
+          //     let course = 0;
+          //     let valueurfinal = 0;
+          //     // Process the retrieved data
+          //     let codeunique = generateUniqueCode();
 
-               for (let i = 0; i < results.length; i++) {
-                 if (results[i].ignition == 1 && valueurfinal == 0) {
-                   codeunique = generateUniqueCode();
-                   course++;
-                 }
-                 //to check if the car in on parkcking inorder to gererate the new code
-                 else if (results[i].ignition == 0 && valueurfinal == 1) {
-                   codeunique = generateUniqueCode();
-                   course++;
-                 }
-                 valueurfinal = results[i].ignition;
+          //     for (let i = 0; i < results.length; i++) {
+          //       if (results[i].ignition == 1 && valueurfinal == 0) {
+          //         codeunique = generateUniqueCode();
+          //         course++;
+          //       }
+          //       //to check if the car in on parkcking inorder to gererate the new code
+          //       else if (results[i].ignition == 0 && valueurfinal == 1) {
+          //         codeunique = generateUniqueCode();
+          //         course++;
+          //       }
+          //       valueurfinal = results[i].ignition;
 
-                 try {
-                   await updateData(results[i].id, codeunique);
-                   // console.log("Update successful for id: ", results[i].id);
-                 } catch (error) {
-                   console.error("Error updating data: " + error.stack);
-                 }
-               }
-               // console.log(course);
+          //       try {
+          //         await updateData(results[i].id, codeunique);
+          //         // console.log("Update successful for id: ", results[i].id);
+          //       } catch (error) {
+          //         console.error("Error updating data: " + error.stack);
+          //       }
+          //     }
+          //     // console.log(course);
 
-             }
-           );
+          //   }
+          // );
 
 
 
