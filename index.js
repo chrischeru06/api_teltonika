@@ -57,7 +57,7 @@ let server = net.createServer((c) => {
       let avl = parser.getAvl();
       console.log(avl);
       var myJsonString = JSON.stringify(avl.records);
-      console.log(myJsonString)
+      //console.log(myJsonString)
 
 
       var donneGps = avl?.records?.map(({ gps, timestamp, ioElements }) => {
