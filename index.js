@@ -79,8 +79,8 @@ let server = net.createServer((c) => {
         console.log(donneGps[0].timestamp);
         console.log(donneGps[0].ioElements[0]);
         console.log(donneGps[0].ioElements[1]);
-        // console.log(donneGps[0].ioElements[2]);
-        // console.log(donneGps[0].ioElements[5]);
+        console.log(donneGps[0].ioElements[2]);
+        console.log(donneGps[0].ioElements[5]);
         //console.log(donneGps[0].ioElements[6]);
         //console.log(donneGps[0].ioElements[5]);
 
