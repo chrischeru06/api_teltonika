@@ -17,7 +17,7 @@ let server = net.createServer((c) => {
   console.log("client connected");
   const connection = mysql.createConnection({
     host: "localhost",//'51.83.236.148
-    port: "36120",
+    port: "3306",
     user: "cartrackingdvs",
     password: "63p85x:RsU+A/Dd(e7",
     database: "car_trucking",
