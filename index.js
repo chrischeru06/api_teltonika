@@ -4,25 +4,25 @@ const binutils = require('binutils64');
 const mysql = require('mysql');
 const util = require('util');
 
-// Database connection pool
+// Base de données avec pool de connexions
 const pool = mysql.createPool({
   host: "localhost",
   port: "3306",
   user: "cartrackingdvs",
   password: "63p85x:RsU+A/Dd(e7",
   database: "car_trucking",
-  connectionLimit: 10, // Optimized connection pooling
+  connectionLimit: 10,
 });
 const query = util.promisify(pool.query).bind(pool);
 
-// Utility to generate unique trip codes
+// Générateur de codes uniques
 function generateUniqueCode() {
-  const timestamp = new Date().getTime().toString(16); // Base 16 timestamp
-  const randomNum = Math.floor(Math.random() * 1000); // Random number (0-999)
+  const timestamp = new Date().getTime().toString(16);
+  const randomNum = Math.floor(Math.random() * 1000);
   return timestamp + randomNum;
 }
 
-// Function to save a record to the database
+// Fonction pour enregistrer les données
 async function saveRecord(detail, ioElements, imei, codeunique, json) {
   const dataToInsert = [
     detail.latitude,
@@ -31,10 +31,10 @@ async function saveRecord(detail, ioElements, imei, codeunique, json) {
     detail.angle,
     detail.satellites,
     detail.speed,
-    ioElements?.[0]?.value || 0, // Default to 0 if undefined
-    ioElements?.[1]?.value || 0,
-    ioElements?.[2]?.value || 0,
-    ioElements?.[5]?.value || 0,
+    ioElements?.[0]?.value || 0, // Ignition
+    ioElements?.[1]?.value || 0, // Mouvement
+    ioElements?.[2]?.value || 0, // GNSS statut
+    ioElements?.[5]?.value || 0, // Ceinture
     imei,
     json,
     codeunique,
@@ -49,17 +49,18 @@ async function saveRecord(detail, ioElements, imei, codeunique, json) {
       ) VALUES (?)`,
       [dataToInsert]
     );
-    console.log("Record successfully inserted into the database.");
+    console.log("Enregistrement inséré dans la base de données.");
   } catch (err) {
-    console.error("Error saving data to the database: ", err);
+    console.error("Erreur lors de l'insertion des données :", err);
   }
 }
 
-// Main server logic
+// Serveur principal
 let server = net.createServer((socket) => {
-  console.log("Client connected");
+  console.log("Client connecté");
   let imei = null;
-  let isPaused = false; // Indicates whether saving is paused due to ignition `0`
+  let isPaused = true; // Pause par défaut
+  let isSpeedStarted = false; // Indique si la vitesse > 0 a été détectée pour ignition `1`
 
   socket.on('data', async (data) => {
     const parser = new Parser(data);
@@ -67,13 +68,13 @@ let server = net.createServer((socket) => {
     if (parser.isImei) {
       imei = parser.imei;
       console.log("IMEI:", imei);
-      socket.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
+      socket.write(Buffer.alloc(1, 1)); // ACK pour IMEI
       return;
     }
 
     const avl = parser.getAvl();
     if (!avl || !avl.records || avl.records.length === 0) {
-      console.log("No AVL records found");
+      console.log("Pas d'enregistrements AVL trouvés");
       return;
     }
 
@@ -81,14 +82,15 @@ let server = net.createServer((socket) => {
     const { gps: detail, ioElements } = record;
 
     if (!detail || detail.latitude === 0 || detail.longitude === 0) {
-      console.log("Invalid GPS coordinates, skipping insertion.");
+      console.log("Coordonnées GPS invalides, insertion ignorée.");
       return;
     }
 
     const ignitionStatus = ioElements?.[0]?.value || 0;
+    const speed = detail.speed || 0;
     const jsonData = JSON.stringify(avl.records);
 
-    // Retrieve the last record for the device
+    // Récupération du dernier enregistrement
     const lastData = (await query(
       'SELECT ignition, CODE_COURSE FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1',
       [imei]
@@ -100,36 +102,41 @@ let server = net.createServer((socket) => {
     }
 
     if (ignitionStatus === 0) {
-      if (!isPaused) {
-        console.log("Ignition 0 detected: Saving record and pausing.");
-        await saveRecord(detail, ioElements, imei, codeunique, jsonData);
-        isPaused = true;
-      }
-    } else if (ignitionStatus === 1 && isPaused) {
-      console.log("Ignition 1 detected: Resuming data saving.");
-      isPaused = false;
-    }
-
-    if (!isPaused) {
+      // Ignition passe à 0 : Enregistrement immédiat
+      console.log("Ignition à 0 détectée : Enregistrement immédiat.");
       await saveRecord(detail, ioElements, imei, codeunique, jsonData);
+      isPaused = true; // Pause jusqu'à ce que l'ignition repasse à 1
+      isSpeedStarted = false; // Réinitialisation du contrôle de la vitesse
+    } else if (ignitionStatus === 1) {
+      if (!isSpeedStarted && speed > 0) {
+        console.log("Ignition à 1 et vitesse > 0 : Début de l'enregistrement.");
+        isPaused = false;
+        isSpeedStarted = true;
+      }
+
+      if (!isPaused && speed > 0) {
+        await saveRecord(detail, ioElements, imei, codeunique, jsonData);
+      } else {
+        console.log("En attente que la vitesse dépasse 0 pour commencer l'enregistrement.");
+      }
     }
 
-    // Send ACK for AVL DATA
+    // Envoi d'un ACK pour les données AVL
     const writer = new binutils.BinaryWriter();
     writer.WriteInt32(avl.number_of_data);
     socket.write(writer.ByteBuffer);
   });
 
   socket.on('end', () => {
-    console.log("Client disconnected");
+    console.log("Client déconnecté");
   });
 
   socket.on('error', (err) => {
-    console.error("Socket error:", err);
+    console.error("Erreur sur le socket :", err);
   });
 });
 
-// Start server
+// Démarrage du serveur
 server.listen(2354, '141.94.194.193', () => {
-  console.log("Server started on port 2354");
+  console.log("Serveur démarré sur le port 2354");
 });
