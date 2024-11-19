@@ -1,135 +1,151 @@
+/**
+ * Écrit par Cerubala Christian Wann'y
+ * email: wanny@mediabox.bi
+ * tel: +25762442698
+ * API pour recevoir des données des appareils Teltonika et les insérer dans une base de données MySQL
+ */
+
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
-const binutils = require('binutils64');
-const mysql = require('mysql');
-const util = require('util');
+const mysql = require("mysql");
+const util = require("util");
 
-// Database connection pool
-const pool = mysql.createPool({
-  host: "localhost",
+// Création de la connexion MySQL avec un pool
+const db = mysql.createPool({
+  host: "localhost", // Remplacez par votre hôte
   port: "3306",
   user: "cartrackingdvs",
   password: "63p85x:RsU+A/Dd(e7",
   database: "car_trucking",
-  connectionLimit: 10, // Optimized connection pooling
 });
-const query = util.promisify(pool.query).bind(pool);
 
-// Utility to generate unique trip codes
+// Promisify pour exécuter des requêtes SQL
+const query = util.promisify(db.query).bind(db);
+
+// Génération d'un code unique
 function generateUniqueCode() {
-  const timestamp = new Date().getTime().toString(16); // Base 16 timestamp
-  const randomNum = Math.floor(Math.random() * 1000); // Random number (0-999)
+  const timestamp = new Date().getTime().toString(16);
+  const randomNum = Math.floor(Math.random() * 1000);
   return timestamp + randomNum;
 }
 
-// Function to save a record to the database
-async function saveRecord(detail, ioElements, imei, codeunique, json) {
-  const dataToInsert = [
-    detail.latitude,
-    detail.longitude,
-    detail.altitude,
-    detail.angle,
-    detail.satellites,
-    detail.speed,
-    ioElements?.[0]?.value || 0, // Default to 0 if undefined
-    ioElements?.[1]?.value || 0,
-    ioElements?.[2]?.value || 0,
-    ioElements?.[5]?.value || 0,
-    imei,
-    json,
-    codeunique,
-  ];
+// Création du serveur
+const server = net.createServer((socket) => {
+  console.log("Client connecté :", socket.remoteAddress);
 
-  try {
-    await query(
-      `INSERT INTO tracking_data(
-        latitude, longitude, altitude, angle, satellites, vitesse, 
-        ignition, mouvement, gnss_statut, CEINTURE, 
-        device_uid, json, CODE_COURSE
-      ) VALUES (?)`,
-      [dataToInsert]
-    );
-    console.log("Record successfully inserted into the database.");
-  } catch (err) {
-    console.error("Error saving data to the database: ", err);
-  }
-}
+  let imei;
+  let ignition = 0; // Suivi de l'état de l'ignition
+  let isRecording = false; // Indique si les données doivent être enregistrées
 
-// Main server logic
-let server = net.createServer((socket) => {
-  console.log("Client connected");
-  let imei = null;
-  let isPaused = false; // Indicates whether saving is paused due to ignition `0`
-
+  // Gestion des données reçues
   socket.on('data', async (data) => {
-    const parser = new Parser(data);
-
-    if (parser.isImei) {
-      imei = parser.imei;
-      console.log("IMEI:", imei);
-      socket.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
+    if (!data || data.length === 0) {
+      console.warn("Données vides reçues, ignorées.");
       return;
     }
 
-    const avl = parser.getAvl();
-    if (!avl || !avl.records || avl.records.length === 0) {
-      console.log("No AVL records found");
-      return;
-    }
+    try {
+      const parser = new Parser(data);
 
-    const record = avl.records[0];
-    const { gps: detail, ioElements } = record;
+      if (parser.isImei) {
+        imei = parser.imei;
+        console.log("IMEI reçu :", imei);
+        socket.write(Buffer.alloc(1, 1)); // Accusé de réception IMEI
+      } else {
+        const avl = parser.getAvl();
+        const records = avl.records;
 
-    if (!detail || detail.latitude === 0 || detail.longitude === 0) {
-      console.log("Invalid GPS coordinates, skipping insertion.");
-      return;
-    }
+        for (const record of records) {
+          const gps = record.gps;
+          const ioElements = record.ioElements;
+          const timestamp = record.timestamp;
 
-    const ignitionStatus = ioElements?.[0]?.value || 0;
-    const jsonData = JSON.stringify(avl.records);
+          if (gps && gps.latitude !== 0 && gps.longitude !== 0) {
+            const newIgnition = ioElements?.[0]?.value || 0; // Ignition actuelle
+            const speed = gps.speed || 0;
 
-    // Retrieve the last record for the device
-    const lastData = (await query(
-      'SELECT ignition, CODE_COURSE FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1',
-      [imei]
-    ))[0];
+            if (newIgnition === 1) {
+              if (!isRecording && speed > 0) {
+                isRecording = true;
+                ignition = newIgnition;
+                console.log("Ignition à 1 et vitesse > 0 : enregistrement activé.");
+              }
+            } else if (newIgnition === 0) {
+              if (ignition !== 0) {
+                ignition = 0;
+                isRecording = false;
+                console.log("Ignition à 0 : enregistrement immédiat.");
+              }
+            }
 
-    let codeunique = lastData?.CODE_COURSE || generateUniqueCode();
-    if (lastData && lastData.ignition !== ignitionStatus) {
-      codeunique = generateUniqueCode();
-    }
+            if (isRecording) {
+              const lastData = (await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]))[0];
+              let codeunique = lastData && lastData.ignition !== newIgnition ? generateUniqueCode() : lastData?.CODE_COURSE || generateUniqueCode();
 
-    if (ignitionStatus === 0) {
-      if (!isPaused) {
-        console.log("Ignition 0 detected: Saving record and pausing.");
-        await saveRecord(detail, ioElements, imei, codeunique, jsonData);
-        isPaused = true;
+              const detailsData = [
+                [
+                  gps.latitude,
+                  gps.longitude,
+                  gps.altitude,
+                  gps.angle,
+                  gps.satellites,
+                  speed,
+                  newIgnition,
+                  ioElements?.[1]?.value || 0, // Mouvement
+                  ioElements?.[2]?.value || 0, // GNSS Status
+                  ioElements?.[5]?.value || 0, // Ceinture
+                  imei,
+                  JSON.stringify(record),
+                  codeunique,
+                ]
+              ];
+
+              await query(
+                `INSERT INTO tracking_data (
+                  latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE
+                ) VALUES ?`,
+                [detailsData]
+              );
+
+              console.log("Données insérées avec succès.");
+            }
+          } else {
+            console.log("Données GPS invalides (lat/lon = 0), aucune insertion.");
+          }
+        }
+
+        const response = Buffer.alloc(4);
+        response.writeInt32BE(avl.number_of_data, 0);
+        socket.write(response); // Accusé de réception des données AVL
       }
-    } else if (ignitionStatus === 1 && isPaused) {
-      console.log("Ignition 1 detected: Resuming data saving.");
-      isPaused = false;
+    } catch (err) {
+      console.error("Erreur lors du traitement des données :", err);
     }
-
-    if (!isPaused) {
-      await saveRecord(detail, ioElements, imei, codeunique, jsonData);
-    }
-
-    // Send ACK for AVL DATA
-    const writer = new binutils.BinaryWriter();
-    writer.WriteInt32(avl.number_of_data);
-    socket.write(writer.ByteBuffer);
   });
 
-  socket.on('end', () => {
-    console.log("Client disconnected");
-  });
-
+  // Gestion des erreurs de socket
   socket.on('error', (err) => {
-    console.error("Socket error:", err);
+    if (err.code === 'ECONNRESET') {
+      console.warn("Connexion réinitialisée par le client :", socket.remoteAddress);
+    } else {
+      console.error("Erreur de socket :", err);
+    }
+  });
+
+  // Gestion de la fin de connexion
+  socket.on('end', () => {
+    console.log("Client déconnecté :", socket.remoteAddress);
+  });
+
+  // Gestion des délais
+  socket.setTimeout(60000); // Timeout de 60 secondes
+  socket.on('timeout', () => {
+    console.warn("Délai dépassé pour le client :", socket.remoteAddress);
+    socket.end();
   });
 });
 
-// Start server
+// Configuration du serveur
 server.listen(2354, '141.94.194.193', () => {
-  console.log("Server started on port 2354");
+  console.log("Serveur démarré sur le port 2354.");
 });
