@@ -11,7 +11,7 @@ const pool = mysql.createPool({
   user: "cartrackingdvs",
   password: "63p85x:RsU+A/Dd(e7",
   database: "car_trucking",
-  connectionLimit: 10, // Optimized connection pooling
+  connectionLimit: 10,
 });
 const query = util.promisify(pool.query).bind(pool);
 
@@ -31,7 +31,7 @@ async function saveRecord(detail, ioElements, imei, codeunique, json) {
     detail.angle,
     detail.satellites,
     detail.speed,
-    ioElements?.[0]?.value || 0, // Default to 0 if undefined
+    ioElements?.[0]?.value || 0, // Ignition
     ioElements?.[1]?.value || 0,
     ioElements?.[2]?.value || 0,
     ioElements?.[5]?.value || 0,
@@ -59,7 +59,8 @@ async function saveRecord(detail, ioElements, imei, codeunique, json) {
 let server = net.createServer((socket) => {
   console.log("Client connected");
   let imei = null;
-  let isPaused = false; // Indicates whether saving is paused due to ignition `0`
+  let saveForIgnition0 = false; // Timer flag for saving when ignition is 0
+  let codeunique = null;
 
   socket.on('data', async (data) => {
     const parser = new Parser(data);
@@ -94,23 +95,28 @@ let server = net.createServer((socket) => {
       [imei]
     ))[0];
 
-    let codeunique = lastData?.CODE_COURSE || generateUniqueCode();
+    if (!codeunique) {
+      codeunique = lastData?.CODE_COURSE || generateUniqueCode();
+    }
+
     if (lastData && lastData.ignition !== ignitionStatus) {
-      codeunique = generateUniqueCode();
-    }
+      if (ignitionStatus === 0) {
+        console.log("Ignition changed to 0: Starting 23 seconds saving.");
+        saveForIgnition0 = true;
 
-    if (ignitionStatus === 0) {
-      if (!isPaused) {
-        console.log("Ignition 0 detected: Saving record and pausing.");
-        await saveRecord(detail, ioElements, imei, codeunique, jsonData);
-        isPaused = true;
+        // Save for 23 seconds, then stop
+        setTimeout(() => {
+          saveForIgnition0 = false;
+          console.log("Stopped saving for ignition 0 after 23 seconds.");
+        }, 23000);
+      } else if (ignitionStatus === 1) {
+        console.log("Ignition changed to 1: Resuming data saving.");
+        codeunique = generateUniqueCode();
       }
-    } else if (ignitionStatus === 1 && isPaused) {
-      console.log("Ignition 1 detected: Resuming data saving.");
-      isPaused = false;
     }
 
-    if (!isPaused) {
+    // Save records based on the conditions
+    if (saveForIgnition0 || ignitionStatus === 1) {
       await saveRecord(detail, ioElements, imei, codeunique, jsonData);
     }
 
