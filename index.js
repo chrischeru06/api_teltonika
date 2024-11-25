@@ -49,7 +49,7 @@ const server = net.createServer((c) => {
       console.log("IMEI:", imei);
       c.write(Buffer.alloc(1, 1)); 
     } else {
-      // Utilisation de imei dans cette portée
+      // Vérification que imei est défini avant de l'utiliser
       if (!imei) {
         console.error("IMEI is not defined. Cannot process data.");
         return; // Sortir si imei n'est pas défini
