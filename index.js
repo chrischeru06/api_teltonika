@@ -58,39 +58,54 @@ const server = net.createServer((c) => {
       console.log("Received AVL data:", avl); // Log des données AVL reçues
       const donneGps = avl.records;
 
-      // Vérification si donneGps est un tableau et a des éléments
+      // Vérification que donneGps est un tableau et a des éléments
       if (Array.isArray(donneGps) && donneGps.length > 0) {
-        const detail = donneGps[0].gps;
-        const ioElements = donneGps[0].ioElements;
+        const gpsData = donneGps[0].gps; // Accéder aux données GPS
+        const ioElements = donneGps[0].ioElements; // Accéder aux éléments IO
 
         // Vérification de la structure des données GPS
-        if (!detail || !Array.isArray(ioElements) || ioElements.length === 0) {
+        if (!gpsData || !Array.isArray(ioElements) || ioElements.length === 0) {
           console.error("GPS data or IO elements are missing.");
           return;
         }
 
-        const currentIgnition = ioElements[0].value;
+        // Enregistrement des données dans la base
+        const currentIgnition = ioElements[0]?.value || null; // Récupérer l'état d'ignition
+        const record = [
+          gpsData.latitude,
+          gpsData.longitude,
+          gpsData.altitude,
+          gpsData.angle,
+          gpsData.satellites,
+          gpsData.speed,
+          currentIgnition,
+          ioElements[1]?.value || null, // Valeur de l'élément IO 1
+          ioElements[2]?.value || null, // Valeur de l'élément IO 2
+          ioElements[5]?.value || null, // Valeur de l'élément IO 5
+          imei,
+          JSON.stringify(donneGps), // Enregistrer les données GPS sous forme de JSON
+          await generateUniqueCodeForDevice(imei) // Générer un code de course unique
+        ];
 
-        // Gestion de l'ignition
+        // Mettre en file les données pour l'insertion
+        dataQueue.push(record);
+        
+        // Si l'ignition vient de s'allumer, démarrer l'enregistrement toutes les 5 secondes
         if (ignitionState !== currentIgnition) {
           if (ignitionState === 0 && currentIgnition === 1) {
-            // L'ignition passe de 0 à 1
             console.log("Ignition ON. Start recording data every 5 seconds.");
-            currentCodeCourse = await generateUniqueCodeForDevice(imei); // Générer un code de course unique
             intervalId = setInterval(() => {
-              queueData(imei, donneGps[0], currentIgnition, currentCodeCourse);
+              queueData(imei, gpsData, currentIgnition);
             }, 5000);
           } else if (ignitionState === 1 && currentIgnition === 0) {
             // L'ignition passe de 1 à 0
             console.log("Ignition OFF. Immediate data recording.");
-            queueData(imei, donneGps[0], currentIgnition, generateUniqueCode()); // Nouveau code de course
             clearInterval(intervalId); // Arrêter l'enregistrement toutes les 5 secondes
           }
           ignitionState = currentIgnition; // Mettre à jour l'état de l'ignition
         }
       } else {
         console.error("No GPS records found or records are not in the expected format.");
-        console.log("AVL data structure:", avl); // Log plus détaillé pour le débogage
       }
 
       const writer = new binutils.BinaryWriter();
@@ -118,30 +133,6 @@ async function generateUniqueCodeForDevice(deviceUid) {
   } else {
     return generateUniqueCode(); // Si lastData n'est pas valide, retourne un nouveau code unique
   }
-}
-
-// Fonction pour mettre en file les données
-function queueData(imei, gpsData, ignition, codeCourse) {
-  const detail = gpsData.gps;
-  const ioElements = gpsData.ioElements;
-
-  const record = [
-    detail.latitude,
-    detail.longitude,
-    detail.altitude,
-    detail.angle,
-    detail.satellites,
-    detail.speed,
-    ignition,
-    ioElements[1]?.value || null, // Utilisation de l'opérateur de coalescence
-    ioElements[2]?.value || null,
-    ioElements[5]?.value || null,
-    imei,
-    JSON.stringify(gpsData.records),
-    codeCourse
-  ];
-
-  dataQueue.push(record);
 }
 
 // Process the data queue at regular intervals
