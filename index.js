@@ -62,7 +62,7 @@ const server = net.createServer((c) => {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
 
-        // Vérification des données GPS et des éléments IO
+        // Vérification de la structure des données GPS
         if (!detail || !Array.isArray(ioElements) || ioElements.length === 0) {
           console.error("GPS data or IO elements are missing.");
           return;
@@ -89,6 +89,7 @@ const server = net.createServer((c) => {
         }
       } else {
         console.error("No GPS records found or records are not in the expected format.");
+        console.log("Received AVL data:", avl); // Log des données AVL pour le débogage
       }
 
       const writer = new binutils.BinaryWriter();
