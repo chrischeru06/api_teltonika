@@ -1,10 +1,16 @@
+/** Writen by Cerubala Christian Wann'y
+ * email: wanny@mediabox.bi
+ * tel: +25762442698
+ * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
+ */
+
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const binutils = require('binutils64');
 const mysql = require("mysql");
 const util = require("util");
 
-// Création d'une connexion MySQL
+// Create a single MySQL connection
 const connection = mysql.createConnection({
   host: "localhost",
   port: "3306",
@@ -13,7 +19,7 @@ const connection = mysql.createConnection({
   database: "car_trucking",
 });
 
-// Connexion à la base de données
+// Connect to the database
 connection.connect((error) => {
   if (error) {
     console.error("Error connecting to the database:", error);
@@ -24,158 +30,94 @@ connection.connect((error) => {
 
 const query = util.promisify(connection.query).bind(connection);
 
-// Queue pour stocker les données à enregistrer
-let dataQueue = [];
-let intervalId = null;
-
 const server = net.createServer((c) => {
   console.log("Client connected");
 
-  let imei; // IMEI du dispositif
-  let ignitionState = null; 
-  let currentCodeCourse = null; // Code de course à utiliser pour les enregistrements
+  let ignitionState = null; // Variable pour suivre l'état de l'ignition
 
   c.on('end', () => {
     console.log("Client disconnected");
-    clearInterval(intervalId); // Nettoyer l'intervalle lorsque le client se déconnecte
   });
 
   c.on('data', async (data) => {
     const parser = new Parser(data);
     
     if (parser.isImei) {
-      imei = parser.imei; // Assigne la valeur à la variable imei
+      const imei = parser.imei;
       console.log("IMEI:", imei);
-      c.write(Buffer.alloc(1, 1)); 
+      c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
     } else {
-      // Vérification que imei est défini avant de l'utiliser
-      if (!imei) {
-        console.error("IMEI is not defined. Cannot process data.");
-        return; // Sortir si imei n'est pas défini
-      }
-
       const avl = parser.getAvl();
-      console.log("Received AVL data:", avl); // Log des données AVL reçues
       const donneGps = avl.records;
 
-      // Vérification que donneGps est un tableau et a des éléments
-      if (Array.isArray(donneGps) && donneGps.length > 0) {
-        const gpsData = donneGps[0].gps; // Accéder aux données GPS
-        const ioElements = donneGps[0].ioElements; // Accéder aux éléments IO
+      if (donneGps.length > 0) {
+        const detail = donneGps[0].gps;
+        const ioElements = donneGps[0].ioElements;
+        const currentIgnition = ioElements[0].value; // Supposons que l'ignition soit la première valeur de ioElements
 
-        // Vérification de la structure des données GPS
-        if (!gpsData || !Array.isArray(ioElements) || ioElements.length === 0) {
-          console.error("GPS data or IO elements are missing.");
-          return;
+        // Si l'ignition change, on gère les enregistrements
+        if (ignitionState === null || currentIgnition !== ignitionState) {
+          ignitionState = currentIgnition; // Met à jour l'état de l'ignition
+
+          if (ignitionState === 0) {
+            // Enregistrer la donnée lorsque l'ignition devient 0
+            await saveData(imei, donneGps[0]);
+            console.log("Data recorded with ignition = 0.");
+          } else if (ignitionState === 1) {
+            // Attendre que l'ignition passe à 1 pour continuer à envoyer des données
+            console.log("Ignition is ON, will continue to record data.");
+          }
         }
 
-        const currentIgnition = ioElements[0]?.value || null; // Récupérer l'état d'ignition
-        const currentSpeed = gpsData.speed || 0; // Récupérer la vitesse
-
-        // Gestion de l'ignition et de la vitesse
-        if (ignitionState === 1 && currentSpeed === 0) {
-          // Ignition est ON et la vitesse est 0, enregistrement unique
-          console.log("Ignition ON and speed is 0. Recording once.");
-          await queueData(imei, gpsData, currentIgnition);
-          clearInterval(intervalId); // Arrêter l'enregistrement périodique
-        } else if (ignitionState === 0 && currentIgnition === 1) {
-          // Passer de OFF à ON, générer un nouveau code de course
-          currentCodeCourse = await generateUniqueCodeForDevice(imei);
-          console.log("Ignition ON. Starting to record data every 5 seconds.");
-          intervalId = setInterval(async () => {
-            await queueData(imei, gpsData, currentIgnition);
-          }, 5000);
-        } else if (ignitionState === 1 && currentIgnition === 0) {
-          // Passer de ON à OFF, enregistrement unique
-          console.log("Ignition OFF. Recording once with ignition = 0.");
-          await queueData(imei, gpsData, currentIgnition);
-          clearInterval(intervalId); // Arrêter l'enregistrement périodique
-        } else if (ignitionState === 1 && currentSpeed > 0) {
-          // Si l'ignition est ON et la vitesse > 0, continuer l'enregistrement
-          await queueData(imei, gpsData, currentIgnition);
+        // Enregistrer les données uniquement si l'ignition est à 1
+        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
+          await saveData(imei, donneGps[0]);
+          console.log("Data recorded with ignition = 1.");
         }
-
-        // Mise à jour de l'état d'ignition
-        ignitionState = currentIgnition; 
-      } else {
-        console.error("No GPS records found or records are not in the expected format.");
       }
 
       const writer = new binutils.BinaryWriter();
       writer.WriteInt32(avl.number_of_data);
-      c.write(writer.ByteBuffer); 
+      c.write(writer.ByteBuffer); // Send ACK for AVL DATA
       c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
     }
   });
 });
 
-// Fonction pour générer un code unique
+server.listen(2354, '141.94.194.193', () => {
+  console.log("Server started on port 2354");
+});
+
 function generateUniqueCode() {
   const timestamp = new Date().getTime().toString(16);
   const randomNum = Math.floor(Math.random() * 1000);
   return timestamp + randomNum;
 }
 
-// Fonction pour générer un code de course unique pour le dispositif
-async function generateUniqueCodeForDevice(deviceUid) {
-  const lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [deviceUid]);
+async function saveData(imei, gpsData) {
+  const detail = gpsData.gps;
+  const ioElements = gpsData.ioElements;
 
-  // Vérifier si lastData est défini et un tableau
-  if (lastData && Array.isArray(lastData)) {
-    return lastData.length > 0 && lastData[0].CODE_COURSE ? lastData[0].CODE_COURSE : generateUniqueCode();
-  } else {
-    return generateUniqueCode(); // Si lastData n'est pas valide, retourne un nouveau code unique
-  }
-}
+  const lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
+  const codeunique = lastData.length && lastData[0].ignition !== ioElements[0].value 
+    ? generateUniqueCode() 
+    : lastData.length ? lastData[0].CODE_COURSE : generateUniqueCode();
 
-// Fonction pour mettre en file les données
-async function queueData(imei, gpsData, ignition) {
-  const record = [
-    gpsData.latitude,
-    gpsData.longitude,
-    gpsData.altitude,
-    gpsData.angle,
-    gpsData.satellites,
-    gpsData.speed,
-    ignition,
-    null, // Valeur de l'élément IO 1 à définir si nécessaire
-    null, // Valeur de l'élément IO 2 à définir si nécessaire
-    null, // Valeur de l'élément IO 5 à définir si nécessaire
+  const detailsData = [
+    detail.latitude,
+    detail.longitude,
+    detail.altitude,
+    detail.angle,
+    detail.satellites,
+    detail.speed,
+    ioElements[0].value,
+    ioElements[1].value,
+    ioElements[2].value,
+    ioElements[5].value,
     imei,
-    JSON.stringify(gpsData), // Enregistrer les données GPS sous forme de JSON
-    await generateUniqueCodeForDevice(imei) // Générer un code de course unique
+    JSON.stringify(gpsData.records),
+    codeunique
   ];
 
-  // Push the data into the queue
-  dataQueue.push(record);
-}
-
-// Process the data queue at regular intervals
-setInterval(async () => {
-  if (dataQueue.length > 0) {
-    const dataToInsert = dataQueue.splice(0, dataQueue.length); // Take all data to insert
-    await saveBatchData(dataToInsert);
-  }
-}, 5000); // Ajuster l'intervalle si nécessaire
-
-server.listen(2354, '141.94.194.193', () => {
-  console.log("Server started on port 2354");
-});
-
-// Fonction pour enregistrer les données par lots
-async function saveBatchData(dataBatch) {
-  const insertPromises = dataBatch.map(data => {
-    return query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', data)
-      .catch(error => {
-        console.error("Error inserting data:", data, error);
-        throw error; // Relancer l'erreur après l'avoir loguée
-      });
-  });
-
-  try {
-    await Promise.all(insertPromises);
-    console.log(`Inserted ${insertPromises.length} records into the database.`);
-  } catch (error) {
-    console.error("Error saving data batch:", error);
-  }
+  await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', detailsData);
 }
