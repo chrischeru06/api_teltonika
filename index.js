@@ -30,6 +30,7 @@ let dataQueue = [];
 const server = net.createServer((c) => {
   console.log("Client connected");
 
+  let imei; // Déclare imei ici pour qu'il soit accessible dans tout le serveur
   let ignitionState = null; 
   let lastIgnitionChangeTime = null; 
   let speedZeroCount = 0; 
@@ -44,10 +45,16 @@ const server = net.createServer((c) => {
     const parser = new Parser(data);
     
     if (parser.isImei) {
-      const imei = parser.imei;
+      imei = parser.imei; // Assigne la valeur à la variable imei
       console.log("IMEI:", imei);
       c.write(Buffer.alloc(1, 1)); 
     } else {
+      // Utilisation de imei dans cette portée
+      if (!imei) {
+        console.error("IMEI is not defined. Cannot process data.");
+        return; // Sortir si imei n'est pas défini
+      }
+
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
@@ -59,6 +66,7 @@ const server = net.createServer((c) => {
           const currentIgnition = ioElements[0].value;
           const currentSpeed = ioElements[5].value; 
 
+          // Vérifier les changements d'état de l'ignition
           if (ignitionState !== currentIgnition) {
             const currentTime = Date.now();
             if (ignitionState === 0 && currentIgnition === 1) {
@@ -71,6 +79,7 @@ const server = net.createServer((c) => {
             ignitionState = currentIgnition; 
           }
 
+          // Enregistrement des données si l'ignition est à 0
           if (ignitionState === 0) {
             zeroValues.push(donneGps[0]);
             if (zeroValues.length > 3) {
@@ -79,6 +88,7 @@ const server = net.createServer((c) => {
             queueData(imei, donneGps[0], ignitionState);
           }
 
+          // Gestion de la vitesse
           if (currentSpeed === 0) {
             if (!speedWasZero) {
               speedZeroCount = 0; 
@@ -94,6 +104,7 @@ const server = net.createServer((c) => {
             speedWasZero = false;
           }
 
+          // Enregistrer les données si l'ignition est à 1
           if (ignitionState === 1) {
             queueData(imei, donneGps[0], ignitionState);
           }
@@ -132,33 +143,42 @@ function queueData(imei, gpsData, ignition) {
   const detail = gpsData.gps;
   const ioElements = gpsData.ioElements;
 
-  const lastData = query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
-  const codeunique = lastData.length && lastData[0].ignition !== ignition 
-    ? generateUniqueCode() 
-    : lastData.length ? lastData[0].CODE_COURSE : generateUniqueCode();
+  query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei])
+    .then(lastData => {
+      const codeunique = lastData.length && lastData[0].ignition !== ignition 
+        ? generateUniqueCode() 
+        : lastData.length ? lastData[0].CODE_COURSE : generateUniqueCode();
 
-  const record = [
-    detail.latitude,
-    detail.longitude,
-    detail.altitude,
-    detail.angle,
-    detail.satellites,
-    detail.speed,
-    ignition,
-    ioElements[1].value,
-    ioElements[2].value,
-    ioElements[5].value,
-    imei,
-    JSON.stringify(gpsData.records),
-    codeunique
-  ];
+      const record = [
+        detail.latitude,
+        detail.longitude,
+        detail.altitude,
+        detail.angle,
+        detail.satellites,
+        detail.speed,
+        ignition,
+        ioElements[1].value,
+        ioElements[2].value,
+        ioElements[5].value,
+        imei,
+        JSON.stringify(gpsData.records),
+        codeunique
+      ];
 
-  dataQueue.push(record);
+      dataQueue.push(record);
+    })
+    .catch(error => {
+      console.error("Error fetching last data:", error);
+    });
 }
 
 async function saveBatchData(dataBatch) {
   const insertPromises = dataBatch.map(data => {
-    return query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', data);
+    return query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', data)
+      .catch(error => {
+        console.error("Error inserting data:", data, error);
+        throw error; // Relancer l'erreur après l'avoir loguée
+      });
   });
 
   try {
