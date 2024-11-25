@@ -33,6 +33,8 @@ const query = util.promisify(connection.query).bind(connection);
 const server = net.createServer((c) => {
   console.log("Client connected");
 
+  let ignitionState = null; // Variable pour suivre l'état de l'ignition
+
   c.on('end', () => {
     console.log("Client disconnected");
   });
@@ -51,32 +53,27 @@ const server = net.createServer((c) => {
       if (donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
+        const currentIgnition = ioElements[0].value; // Supposons que l'ignition soit la première valeur de ioElements
 
-        if (detail.latitude !== 0 && detail.longitude !== 0) {
-          const lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
-          const codeunique = lastData.length && lastData[0].ignition !== ioElements[0].value 
-            ? generateUniqueCode() 
-            : lastData.length ? lastData[0].CODE_COURSE : generateUniqueCode();
+        // Gérer les transitions d'ignition
+        if (ignitionState === null || currentIgnition !== ignitionState) {
+          if (ignitionState === 1 && currentIgnition === 0) {
+            // Enregistrer la donnée lorsque l'ignition passe de 1 à 0
+            await saveData(imei, donneGps[0], currentIgnition);
+            console.log("Data recorded with ignition = 0.");
+          }
 
-          const detailsData = [
-            detail.latitude,
-            detail.longitude,
-            detail.altitude,
-            detail.angle,
-            detail.satellites,
-            detail.speed,
-            ioElements[0].value,
-            ioElements[1].value,
-            ioElements[2].value,
-            ioElements[5].value,
-            imei,
-            JSON.stringify(avl.records),
-            codeunique
-          ];
+          ignitionState = currentIgnition; // Met à jour l'état de l'ignition
 
-          await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', detailsData);
-        } else {
-          console.log("Latitude or Longitude is zero, no insertion.");
+          if (ignitionState === 1) {
+            console.log("Ignition is ON, will continue to record data.");
+          }
+        }
+
+        // Enregistrer les données uniquement si l'ignition est à 1
+        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Data recorded with ignition = 1.");
         }
       }
 
@@ -96,4 +93,32 @@ function generateUniqueCode() {
   const timestamp = new Date().getTime().toString(16);
   const randomNum = Math.floor(Math.random() * 1000);
   return timestamp + randomNum;
+}
+
+async function saveData(imei, gpsData, ignition) {
+  const detail = gpsData.gps;
+  const ioElements = gpsData.ioElements;
+
+  const lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
+  const codeunique = lastData.length && lastData[0].ignition !== ignition 
+    ? generateUniqueCode() 
+    : lastData.length ? lastData[0].CODE_COURSE : generateUniqueCode();
+
+  const detailsData = [
+    detail.latitude,
+    detail.longitude,
+    detail.altitude,
+    detail.angle,
+    detail.satellites,
+    detail.speed,
+    ignition,
+    ioElements[1].value,
+    ioElements[2].value,
+    ioElements[5].value,
+    imei,
+    JSON.stringify(gpsData.records),
+    codeunique
+  ];
+
+  await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', detailsData);
 }
