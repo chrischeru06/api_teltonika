@@ -61,6 +61,12 @@ const server = net.createServer((c) => {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
 
+        // Vérification des données GPS et des éléments IO
+        if (!detail || !ioElements) {
+          console.error("GPS data or IO elements are missing.");
+          return;
+        }
+
         const currentIgnition = ioElements[0].value;
 
         // Gestion de l'ignition
@@ -80,6 +86,8 @@ const server = net.createServer((c) => {
           }
           ignitionState = currentIgnition; // Mettre à jour l'état de l'ignition
         }
+      } else {
+        console.error("No GPS records found.");
       }
 
       const writer = new binutils.BinaryWriter();
@@ -95,6 +103,18 @@ function generateUniqueCode() {
   const timestamp = new Date().getTime().toString(16);
   const randomNum = Math.floor(Math.random() * 1000);
   return timestamp + randomNum;
+}
+
+// Fonction pour générer un code de course unique pour le dispositif
+async function generateUniqueCodeForDevice(deviceUid) {
+  const lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [deviceUid]);
+
+  // Vérifier si lastData est défini et un tableau
+  if (lastData && Array.isArray(lastData)) {
+    return lastData.length && lastData[0].CODE_COURSE ? lastData[0].CODE_COURSE : generateUniqueCode();
+  } else {
+    return generateUniqueCode(); // Si lastData n'est pas valide, retourne un nouveau code unique
+  }
 }
 
 // Fonction pour mettre en file les données
