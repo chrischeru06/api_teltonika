@@ -4,7 +4,7 @@ const binutils = require('binutils64');
 const mysql = require("mysql");
 const util = require("util");
 
-// Create a single MySQL connection
+// Création d'une connexion MySQL
 const connection = mysql.createConnection({
   host: "localhost",
   port: "3306",
@@ -13,7 +13,7 @@ const connection = mysql.createConnection({
   database: "car_trucking",
 });
 
-// Connect to the database
+// Connexion à la base de données
 connection.connect((error) => {
   if (error) {
     console.error("Error connecting to the database:", error);
@@ -24,7 +24,7 @@ connection.connect((error) => {
 
 const query = util.promisify(connection.query).bind(connection);
 
-// Queue for storing data to be saved
+// Queue pour stocker les données à enregistrer
 let dataQueue = [];
 let intervalId = null;
 
@@ -57,12 +57,13 @@ const server = net.createServer((c) => {
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
-      if (donneGps.length > 0) {
+      // Vérification si donneGps est un tableau et a des éléments
+      if (Array.isArray(donneGps) && donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
 
         // Vérification des données GPS et des éléments IO
-        if (!detail || !ioElements) {
+        if (!detail || !Array.isArray(ioElements) || ioElements.length === 0) {
           console.error("GPS data or IO elements are missing.");
           return;
         }
@@ -87,7 +88,7 @@ const server = net.createServer((c) => {
           ignitionState = currentIgnition; // Mettre à jour l'état de l'ignition
         }
       } else {
-        console.error("No GPS records found.");
+        console.error("No GPS records found or records are not in the expected format.");
       }
 
       const writer = new binutils.BinaryWriter();
@@ -111,7 +112,7 @@ async function generateUniqueCodeForDevice(deviceUid) {
 
   // Vérifier si lastData est défini et un tableau
   if (lastData && Array.isArray(lastData)) {
-    return lastData.length && lastData[0].CODE_COURSE ? lastData[0].CODE_COURSE : generateUniqueCode();
+    return lastData.length > 0 && lastData[0].CODE_COURSE ? lastData[0].CODE_COURSE : generateUniqueCode();
   } else {
     return generateUniqueCode(); // Si lastData n'est pas valide, retourne un nouveau code unique
   }
@@ -130,9 +131,9 @@ function queueData(imei, gpsData, ignition, codeCourse) {
     detail.satellites,
     detail.speed,
     ignition,
-    ioElements[1].value,
-    ioElements[2].value,
-    ioElements[5].value,
+    ioElements[1]?.value || null, // Utilisation de l'opérateur de coalescence
+    ioElements[2]?.value || null,
+    ioElements[5]?.value || null,
     imei,
     JSON.stringify(gpsData.records),
     codeCourse
