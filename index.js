@@ -69,41 +69,34 @@ const server = net.createServer((c) => {
           return;
         }
 
-        // Enregistrement des données dans la base
         const currentIgnition = ioElements[0]?.value || null; // Récupérer l'état d'ignition
-        const record = [
-          gpsData.latitude,
-          gpsData.longitude,
-          gpsData.altitude,
-          gpsData.angle,
-          gpsData.satellites,
-          gpsData.speed,
-          currentIgnition,
-          ioElements[1]?.value || null, // Valeur de l'élément IO 1
-          ioElements[2]?.value || null, // Valeur de l'élément IO 2
-          ioElements[5]?.value || null, // Valeur de l'élément IO 5
-          imei,
-          JSON.stringify(donneGps), // Enregistrer les données GPS sous forme de JSON
-          await generateUniqueCodeForDevice(imei) // Générer un code de course unique
-        ];
+        const currentSpeed = gpsData.speed || 0; // Récupérer la vitesse
 
-        // Mettre en file les données pour l'insertion
-        dataQueue.push(record);
-        
-        // Si l'ignition vient de s'allumer, démarrer l'enregistrement toutes les 5 secondes
-        if (ignitionState !== currentIgnition) {
-          if (ignitionState === 0 && currentIgnition === 1) {
-            console.log("Ignition ON. Start recording data every 5 seconds.");
-            intervalId = setInterval(() => {
-              queueData(imei, gpsData, currentIgnition);
-            }, 5000);
-          } else if (ignitionState === 1 && currentIgnition === 0) {
-            // L'ignition passe de 1 à 0
-            console.log("Ignition OFF. Immediate data recording.");
-            clearInterval(intervalId); // Arrêter l'enregistrement toutes les 5 secondes
-          }
-          ignitionState = currentIgnition; // Mettre à jour l'état de l'ignition
+        // Gestion de l'ignition et de la vitesse
+        if (ignitionState === 1 && currentSpeed === 0) {
+          // Ignition est ON et la vitesse est 0, enregistrement unique
+          console.log("Ignition ON and speed is 0. Recording once.");
+          await queueData(imei, gpsData, currentIgnition);
+          clearInterval(intervalId); // Arrêter l'enregistrement périodique
+        } else if (ignitionState === 0 && currentIgnition === 1) {
+          // Passer de OFF à ON, générer un nouveau code de course
+          currentCodeCourse = await generateUniqueCodeForDevice(imei);
+          console.log("Ignition ON. Starting to record data every 5 seconds.");
+          intervalId = setInterval(async () => {
+            await queueData(imei, gpsData, currentIgnition);
+          }, 5000);
+        } else if (ignitionState === 1 && currentIgnition === 0) {
+          // Passer de ON à OFF, enregistrement unique
+          console.log("Ignition OFF. Recording once with ignition = 0.");
+          await queueData(imei, gpsData, currentIgnition);
+          clearInterval(intervalId); // Arrêter l'enregistrement périodique
+        } else if (ignitionState === 1 && currentSpeed > 0) {
+          // Si l'ignition est ON et la vitesse > 0, continuer l'enregistrement
+          await queueData(imei, gpsData, currentIgnition);
         }
+
+        // Mise à jour de l'état d'ignition
+        ignitionState = currentIgnition; 
       } else {
         console.error("No GPS records found or records are not in the expected format.");
       }
@@ -133,6 +126,28 @@ async function generateUniqueCodeForDevice(deviceUid) {
   } else {
     return generateUniqueCode(); // Si lastData n'est pas valide, retourne un nouveau code unique
   }
+}
+
+// Fonction pour mettre en file les données
+async function queueData(imei, gpsData, ignition) {
+  const record = [
+    gpsData.latitude,
+    gpsData.longitude,
+    gpsData.altitude,
+    gpsData.angle,
+    gpsData.satellites,
+    gpsData.speed,
+    ignition,
+    null, // Valeur de l'élément IO 1 à définir si nécessaire
+    null, // Valeur de l'élément IO 2 à définir si nécessaire
+    null, // Valeur de l'élément IO 5 à définir si nécessaire
+    imei,
+    JSON.stringify(gpsData), // Enregistrer les données GPS sous forme de JSON
+    await generateUniqueCodeForDevice(imei) // Générer un code de course unique
+  ];
+
+  // Push the data into the queue
+  dataQueue.push(record);
 }
 
 // Process the data queue at regular intervals
