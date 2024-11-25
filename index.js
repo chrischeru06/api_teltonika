@@ -1,135 +1,170 @@
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const binutils = require('binutils64');
-const mysql = require('mysql');
-const util = require('util');
+const mysql = require("mysql");
+const util = require("util");
 
-// Database connection pool
-const pool = mysql.createPool({
+// Create a single MySQL connection
+const connection = mysql.createConnection({
   host: "localhost",
   port: "3306",
   user: "cartrackingdvs",
   password: "63p85x:RsU+A/Dd(e7",
   database: "car_trucking",
-  connectionLimit: 10, // Optimized connection pooling
 });
-const query = util.promisify(pool.query).bind(pool);
 
-// Utility to generate unique trip codes
+// Connect to the database
+connection.connect((error) => {
+  if (error) {
+    console.error("Error connecting to the database:", error);
+    return;
+  }
+  console.log("Successfully connected to the database.");
+});
+
+const query = util.promisify(connection.query).bind(connection);
+
+// Queue for storing data to be saved
+let dataQueue = [];
+
+const server = net.createServer((c) => {
+  console.log("Client connected");
+
+  let ignitionState = null; 
+  let lastIgnitionChangeTime = null; 
+  let speedZeroCount = 0; 
+  let speedWasZero = false; 
+  let zeroValues = []; 
+
+  c.on('end', () => {
+    console.log("Client disconnected");
+  });
+
+  c.on('data', async (data) => {
+    const parser = new Parser(data);
+    
+    if (parser.isImei) {
+      const imei = parser.imei;
+      console.log("IMEI:", imei);
+      c.write(Buffer.alloc(1, 1)); 
+    } else {
+      const avl = parser.getAvl();
+      const donneGps = avl.records;
+
+      if (donneGps.length > 0) {
+        const detail = donneGps[0].gps;
+        const ioElements = donneGps[0].ioElements;
+
+        if (detail.latitude !== 0 && detail.longitude !== 0) {
+          const currentIgnition = ioElements[0].value;
+          const currentSpeed = ioElements[5].value; 
+
+          if (ignitionState !== currentIgnition) {
+            const currentTime = Date.now();
+            if (ignitionState === 0 && currentIgnition === 1) {
+              if (lastIgnitionChangeTime && (currentTime - lastIgnitionChangeTime < 60000)) {
+                console.log("Data ignored: Ignition changed from 0 to 1 within a minute.");
+                return; 
+              }
+            }
+            lastIgnitionChangeTime = currentTime; 
+            ignitionState = currentIgnition; 
+          }
+
+          if (ignitionState === 0) {
+            zeroValues.push(donneGps[0]);
+            if (zeroValues.length > 3) {
+              zeroValues.shift(); 
+            }
+            queueData(imei, donneGps[0], ignitionState);
+          }
+
+          if (currentSpeed === 0) {
+            if (!speedWasZero) {
+              speedZeroCount = 0; 
+            }
+
+            if (speedZeroCount < 2) {
+              queueData(imei, donneGps[0], ignitionState);
+              speedZeroCount++;
+            }
+
+            speedWasZero = true;
+          } else {
+            speedWasZero = false;
+          }
+
+          if (ignitionState === 1) {
+            queueData(imei, donneGps[0], ignitionState);
+          }
+        } else {
+          console.log("Latitude or Longitude is zero, no insertion.");
+        }
+      }
+
+      const writer = new binutils.BinaryWriter();
+      writer.WriteInt32(avl.number_of_data);
+      c.write(writer.ByteBuffer); 
+      c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+    }
+  });
+});
+
+// Process the data queue at regular intervals
+setInterval(async () => {
+  if (dataQueue.length > 0) {
+    const dataToInsert = dataQueue.splice(0, dataQueue.length); // Take all data to insert
+    await saveBatchData(dataToInsert);
+  }
+}, 5000); // Adjust the interval as needed
+
+server.listen(2354, '141.94.194.193', () => {
+  console.log("Server started on port 2354");
+});
+
 function generateUniqueCode() {
-  const timestamp = new Date().getTime().toString(16); // Base 16 timestamp
-  const randomNum = Math.floor(Math.random() * 1000); // Random number (0-999)
+  const timestamp = new Date().getTime().toString(16);
+  const randomNum = Math.floor(Math.random() * 1000);
   return timestamp + randomNum;
 }
 
-// Function to save a record to the database
-async function saveRecord(detail, ioElements, imei, codeunique, json) {
-  const dataToInsert = [
+function queueData(imei, gpsData, ignition) {
+  const detail = gpsData.gps;
+  const ioElements = gpsData.ioElements;
+
+  const lastData = query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
+  const codeunique = lastData.length && lastData[0].ignition !== ignition 
+    ? generateUniqueCode() 
+    : lastData.length ? lastData[0].CODE_COURSE : generateUniqueCode();
+
+  const record = [
     detail.latitude,
     detail.longitude,
     detail.altitude,
     detail.angle,
     detail.satellites,
     detail.speed,
-    ioElements?.[0]?.value || 0, // Default to 0 if undefined
-    ioElements?.[1]?.value || 0,
-    ioElements?.[2]?.value || 0,
-    ioElements?.[5]?.value || 0,
+    ignition,
+    ioElements[1].value,
+    ioElements[2].value,
+    ioElements[5].value,
     imei,
-    json,
-    codeunique,
+    JSON.stringify(gpsData.records),
+    codeunique
   ];
 
-  try {
-    await query(
-      `INSERT INTO tracking_data(
-        latitude, longitude, altitude, angle, satellites, vitesse, 
-        ignition, mouvement, gnss_statut, CEINTURE, 
-        device_uid, json, CODE_COURSE
-      ) VALUES (?)`,
-      [dataToInsert]
-    );
-    console.log("Record successfully inserted into the database.");
-  } catch (err) {
-    console.error("Error saving data to the database: ", err);
-  }
+  dataQueue.push(record);
 }
 
-// Main server logic
-let server = net.createServer((socket) => {
-  console.log("Client connected");
-  let imei = null;
-  let isPaused = false; // Indicates whether saving is paused due to ignition `0`
-
-  socket.on('data', async (data) => {
-    const parser = new Parser(data);
-
-    if (parser.isImei) {
-      imei = parser.imei;
-      console.log("IMEI:", imei);
-      socket.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
-      return;
-    }
-
-    const avl = parser.getAvl();
-    if (!avl || !avl.records || avl.records.length === 0) {
-      console.log("No AVL records found");
-      return;
-    }
-
-    const record = avl.records[0];
-    const { gps: detail, ioElements } = record;
-
-    if (!detail || detail.latitude === 0 || detail.longitude === 0) {
-      console.log("Invalid GPS coordinates, skipping insertion.");
-      return;
-    }
-
-    const ignitionStatus = ioElements?.[0]?.value || 0;
-    const jsonData = JSON.stringify(avl.records);
-
-    // Retrieve the last record for the device
-    const lastData = (await query(
-      'SELECT ignition, CODE_COURSE FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1',
-      [imei]
-    ))[0];
-
-    let codeunique = lastData?.CODE_COURSE || generateUniqueCode();
-    if (lastData && lastData.ignition !== ignitionStatus) {
-      codeunique = generateUniqueCode();
-    }
-
-    if (ignitionStatus === 0) {
-      if (!isPaused) {
-        console.log("Ignition 0 detected: Saving record and pausing.");
-        await saveRecord(detail, ioElements, imei, codeunique, jsonData);
-        isPaused = true;
-      }
-    } else if (ignitionStatus === 1 && isPaused) {
-      console.log("Ignition 1 detected: Resuming data saving.");
-      isPaused = false;
-    }
-
-    if (!isPaused) {
-      await saveRecord(detail, ioElements, imei, codeunique, jsonData);
-    }
-
-    // Send ACK for AVL DATA
-    const writer = new binutils.BinaryWriter();
-    writer.WriteInt32(avl.number_of_data);
-    socket.write(writer.ByteBuffer);
+async function saveBatchData(dataBatch) {
+  const insertPromises = dataBatch.map(data => {
+    return query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', data);
   });
 
-  socket.on('end', () => {
-    console.log("Client disconnected");
-  });
-
-  socket.on('error', (err) => {
-    console.error("Socket error:", err);
-  });
-});
-
-// Start server
-server.listen(2354, '141.94.194.193', () => {
-  console.log("Server started on port 2354");
-});
+  try {
+    await Promise.all(insertPromises);
+    console.log(`Inserted ${insertPromises.length} records into the database.`);
+  } catch (error) {
+    console.error("Error saving data batch:", error);
+  }
+}
