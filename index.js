@@ -55,6 +55,7 @@ const server = net.createServer((c) => {
       }
 
       const avl = parser.getAvl();
+      console.log("Received AVL data:", avl); // Log des données AVL reçues
       const donneGps = avl.records;
 
       // Vérification si donneGps est un tableau et a des éléments
@@ -89,7 +90,7 @@ const server = net.createServer((c) => {
         }
       } else {
         console.error("No GPS records found or records are not in the expected format.");
-        console.log("Received AVL data:", avl); // Log des données AVL pour le débogage
+        console.log("AVL data structure:", avl); // Log plus détaillé pour le débogage
       }
 
       const writer = new binutils.BinaryWriter();
