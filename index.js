@@ -65,7 +65,7 @@ const server = net.createServer((c) => {
           if (ignitionState === 1 && detail.speed === 0) {
             // Record speed == 0
             await saveData(imei, donneGps[0], currentIgnition);
-            console.log("save with speed  = 0");
+            console.log("Saved with speed = 0");
           }
 
           ignitionState = currentIgnition; // Update ignition state
@@ -75,18 +75,17 @@ const server = net.createServer((c) => {
           }
         }
 
-      // Enregistrer les données uniquement si l'allumage est activé
-         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0 && detail.speed > 0) {
-               try {
-                      await saveData(imei, donneGps[0], currentIgnition);
-                      console.log("Données enregistrées avec l'allumage = 1 et vitesse diff de 0");
-               } catch (error) {
-                      console.error("Erreur lors de l'enregistrement des données :", error);
-               }
-                    } 
-        else {
-                console.log("Conditions non remplies pour l'enregistrement des données.");
+        // Enregistrer les données uniquement si l'allumage est activé
+        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0 && detail.speed > 0) {
+          try {
+            await saveData(imei, donneGps[0], currentIgnition);
+            console.log("Données enregistrées avec l'allumage = 1 et vitesse diff de 0");
+          } catch (error) {
+            console.error("Erreur lors de l'enregistrement des données :", error);
           }
+        } else {
+          console.log("Conditions non remplies pour l'enregistrement des données.");
+        }
       }
 
       const writer = new binutils.BinaryWriter();
@@ -111,59 +110,55 @@ function generateUniqueCode() {
 
 // Function to save data to the database
 async function saveData(imei, gpsData, ignition) {
-  const detail = gpsData.gps;
-  const ioElements = gpsData.ioElements;
+    const detail = gpsData.gps;
+    const ioElements = gpsData.ioElements;
 
-  let lastData;
-  try {
-    lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
-    console.log("Last data fetched:", lastData); // Log to check what is fetched
-  } catch (error) {
-    console.error("Database query error:", error);
-    return; // Exit the function if there's an error
-  }
-
-  let codeunique;
-  if (Array.isArray(lastData) && lastData.length) {
-    if (lastData[0].ignition !== ignition) {
-      codeunique = generateUniqueCode();
-    } else {
-      codeunique = lastData[0].CODE_COURSE;
+    let lastData;
+    try {
+        lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
+        console.log("Last data fetched:", lastData);
+    } catch (error) {
+        console.error("Database query error:", error);
+        return; // Exit the function if there's an error
     }
-  } else {
-    codeunique = generateUniqueCode(); // Handle case where lastData is empty or undefined
-  }
 
-  const detailsData = [
-    detail.latitude,
-    detail.longitude,
-    detail.altitude,
-    detail.angle,
-    detail.satellites,
-    detail.speed,
-    ignition,
-    ioElements[1]?.value, // Optional chaining to avoid undefined errors
-    ioElements[2]?.value,
-    ioElements[5]?.value,
-    imei,
-    JSON.stringify(gpsData.records),
-    codeunique
-  ];
+    // Check if lastData is valid
+    if (!lastData || !Array.isArray(lastData)) {
+        console.error("No last data found for IMEI:", imei);
+        return; // Exit or handle as needed
+    }
 
-  try {
-    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', detailsData);
-  } catch (error) {
-    console.error("Error inserting data:", error);
-  }
+    let codeunique;
+    if (lastData.length > 0) {
+        if (lastData[0].ignition !== ignition) {
+            codeunique = generateUniqueCode();
+        } else {
+            codeunique = lastData[0].CODE_COURSE;
+        }
+    } else {
+        codeunique = generateUniqueCode(); // Handle case where lastData is empty
+    }
+
+    const detailsData = [
+        detail.latitude,
+        detail.longitude,
+        detail.altitude,
+        detail.angle,
+        detail.satellites,
+        detail.speed,
+        ignition,
+        ioElements[1]?.value, // Optional chaining to avoid undefined errors
+        ioElements[2]?.value,
+        ioElements[5]?.value,
+        imei,
+        JSON.stringify(gpsData.records),
+        codeunique
+    ];
+
+    try {
+        await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', detailsData);
+        console.log("Data successfully saved for IMEI:", imei);
+    } catch (error) {
+        console.error("Error inserting data:", error);
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
