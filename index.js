@@ -41,6 +41,8 @@ const server = net.createServer((c) => {
   });
 
   c.on('data', async (data) => {
+    console.log("Raw data received:", data.toString('hex')); // Log raw data in hex format
+
     const parser = new Parser(data);
     
     if (parser.isImei) {
@@ -57,17 +59,26 @@ const server = net.createServer((c) => {
     }
 
     const avl = parser.getAvl();
+    console.log("Parsed AVL data:", avl); // Log the entire parsed AVL data
+
     const donneGps = avl.records;
+    console.log("Records in donneGps:", donneGps); // Log donneGps for inspection
 
     // Check if donneGps is defined and has records
     if (donneGps && donneGps.length > 0) {
       const detail = donneGps[0].gps;
       const ioElements = donneGps[0].ioElements;
 
-      // Check if ioElements is defined and has elements
+      // Ensure gps detail is defined
+      if (!detail) {
+        console.error("GPS detail is not defined in donneGps[0].");
+        return;
+      }
+
+      // Ensure ioElements is defined
       if (!ioElements || ioElements.length === 0) {
         console.error("IO Elements are not defined or empty.");
-        return; // Exit if IO elements are not valid
+        return;
       }
 
       const currentIgnition = ioElements[0]?.value; // Assuming ignition is the first value
@@ -96,7 +107,7 @@ const server = net.createServer((c) => {
         }
       }
     } else {
-      console.error("No GPS data available in donneGps.");
+      console.error("No GPS data available in donneGps. Check AVL data structure:", avl);
     }
 
     const writer = new binutils.BinaryWriter();
