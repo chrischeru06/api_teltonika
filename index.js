@@ -36,6 +36,7 @@ const server = net.createServer((c) => {
   let ignitionState = null; // Variable to track ignition state
   let previousSpeed = null;  // Variable to track previous speed
   let sendInterval = null;    // Timer for sending data at intervals
+  let imei;                  // Declare imei here
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -44,75 +45,75 @@ const server = net.createServer((c) => {
 
   c.on('data', async (data) => {
     const parser = new Parser(data);
-    let imei; // Declare imei here
 
     if (parser.isImei) {
       imei = parser.imei; // Assign imei when valid
       console.log("IMEI:", imei);
       c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
-    } else {
-      // Ensure imei is defined before using it
-      if (!imei) {
-        console.error("IMEI is not defined. Unable to process data.");
-        return; // Exit if IMEI is not set
-      }
-
-      const avl = parser.getAvl();
-      const donneGps = avl.records;
-
-      if (donneGps.length > 0) {
-        const detail = donneGps[0].gps;
-        const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value
-        const currentSpeed = detail.speed; // Get the current speed
-
-        // Handle ignition transitions
-        if (ignitionState === null || currentIgnition !== ignitionState) {
-          if (ignitionState === 1 && currentIgnition === 0) {
-            // Record data when ignition goes from ON to OFF
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data recorded with ignition = 0.");
-          }
-
-          ignitionState = currentIgnition; // Update ignition state
-
-          if (ignitionState === 1) {
-            console.log("Ignition is ON, will continue to record data.");
-
-            // Start sending data every 5 seconds if speed is 0
-            if (currentSpeed === 0) {
-              clearInterval(sendInterval); // Clear any existing interval
-              sendInterval = setInterval(async () => {
-                await saveData(imei, donneGps[0], currentIgnition);
-                console.log("Sending data at speed = 0");
-              }, 5000);
-            }
-          } else {
-            clearInterval(sendInterval); // Clear interval if ignition is OFF
-          }
-        }
-
-        // Check if speed has changed from 0 to > 0
-        if (ignitionState === 1 && currentSpeed > 0) {
-          await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Speed is now greater than 0, continuing to send data.");
-        }
-
-        // Update previous speed
-        previousSpeed = currentSpeed;
-
-        // Save data only if ignition is ON and speed is valid
-        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Data recorded with ignition = 1.");
-        }
-      }
-
-      const writer = new binutils.BinaryWriter();
-      writer.WriteInt32(avl.number_of_data);
-      c.write(writer.ByteBuffer); // Send ACK for AVL DATA
-      c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+      return; // Exit after processing IMEI
     }
+
+    // Ensure IMEI is defined before processing other data
+    if (!imei) {
+      console.error("IMEI is not defined. Unable to process data.");
+      return; // Exit if IMEI is not set
+    }
+
+    const avl = parser.getAvl();
+    const donneGps = avl.records;
+
+    if (donneGps.length > 0) {
+      const detail = donneGps[0].gps;
+      const ioElements = donneGps[0].ioElements;
+      const currentIgnition = ioElements[0].value; // Assuming ignition is the first value
+      const currentSpeed = detail.speed; // Get the current speed
+
+      // Handle ignition transitions
+      if (ignitionState === null || currentIgnition !== ignitionState) {
+        if (ignitionState === 1 && currentIgnition === 0) {
+          // Record data when ignition goes from ON to OFF
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Data recorded with ignition = 0.");
+        }
+
+        ignitionState = currentIgnition; // Update ignition state
+
+        if (ignitionState === 1) {
+          console.log("Ignition is ON, will continue to record data.");
+
+          // Start sending data every 5 seconds if speed is 0
+          if (currentSpeed === 0) {
+            clearInterval(sendInterval); // Clear any existing interval
+            sendInterval = setInterval(async () => {
+              await saveData(imei, donneGps[0], currentIgnition);
+              console.log("Sending data at speed = 0");
+            }, 5000);
+          }
+        } else {
+          clearInterval(sendInterval); // Clear interval if ignition is OFF
+        }
+      }
+
+      // Check if speed has changed from 0 to > 0
+      if (ignitionState === 1 && currentSpeed > 0) {
+        await saveData(imei, donneGps[0], currentIgnition);
+        console.log("Speed is now greater than 0, continuing to send data.");
+      }
+
+      // Update previous speed
+      previousSpeed = currentSpeed;
+
+      // Save data only if ignition is ON and speed is valid
+      if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
+        await saveData(imei, donneGps[0], currentIgnition);
+        console.log("Data recorded with ignition = 1.");
+      }
+    }
+
+    const writer = new binutils.BinaryWriter();
+    writer.WriteInt32(avl.number_of_data);
+    c.write(writer.ByteBuffer); // Send ACK for AVL DATA
+    c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
   });
 });
 
