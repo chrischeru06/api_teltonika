@@ -1,9 +1,9 @@
 /** Writen by Cerubala Christian Wann'y
+ * email: wanny@mediabox.bi
+ * tel: +25762442698
+ * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
+ */
 
-email: wanny@mediabox.bi
-tel: +25762442698
-This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
-*/
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const binutils = require('binutils64');
@@ -40,38 +40,20 @@ const server = net.createServer((c) => {
   });
 
   c.on('data', async (data) => {
-    try {
-      const parser = new Parser(data);
+    const parser = new Parser(data);
+    
+    if (parser.isImei) {
+      const imei = parser.imei;
+      console.log("IMEI:", imei);
+      c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
+    } else {
+      const avl = parser.getAvl();
+      const donneGps = avl.records;
 
-      if (parser.isImei) {
-        const imei = parser.imei;
-        console.log("IMEI:", imei);
-        c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
-      } else {
-        const avl = parser.getAvl();
-
-        // Validate AVL data
-        if (!avl || !avl.records) {
-          console.error("Invalid AVL data or missing records:", avl);
-          return; // Exit if no records
-        }
-
-        const donneGps = avl.records;
-
-        // Validate GPS data
-        if (!donneGps.length) {
-          console.error("No GPS data in AVL records:", donneGps);
-          return; // Exit if no valid GPS data
-        }
-
-        const detail = donneGps[0].gps || {};
-        const ioElements = donneGps[0].ioElements || [];
-        const currentIgnition = ioElements?.[0]?.value;
-
-        if (currentIgnition === undefined) {
-          console.error("Missing ignition data in IO elements:", ioElements);
-          return; // Exit if ignition data is missing
-        }
+      if (donneGps.length > 0) {
+        const detail = donneGps[0].gps;
+        const ioElements = donneGps[0].ioElements;
+        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value of ioElements
 
         // Handle ignition transitions
         if (ignitionState === null || currentIgnition !== ignitionState) {
@@ -81,12 +63,6 @@ const server = net.createServer((c) => {
             console.log("Data recorded with ignition = 0.");
           }
 
-          if (ignitionState === 1 && detail.speed === 0) {
-            // Record speed == 0
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Save with speed = 0.");
-          }
-
           ignitionState = currentIgnition; // Update ignition state
 
           if (ignitionState === 1) {
@@ -94,25 +70,17 @@ const server = net.createServer((c) => {
           }
         }
 
-        // Record data when ignition is ON and speed > 0
-        if (ignitionState === 1 && detail.latitude && detail.longitude && detail.speed > 0) {
-          try {
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data saved with ignition = 1 and speed > 0.");
-          } catch (error) {
-            console.error("Error saving data:", error);
-          }
-        } else {
-          console.log("Conditions not met for data recording.");
+        // Save data only if ignition is ON
+        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Data recorded with ignition = 1.");
         }
-
-        const writer = new binutils.BinaryWriter();
-        writer.WriteInt32(avl.number_of_data);
-        c.write(writer.ByteBuffer); // Send ACK for AVL DATA
-        c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
       }
-    } catch (error) {
-      console.error("Error processing data:", error);
+
+      const writer = new binutils.BinaryWriter();
+      writer.WriteInt32(avl.number_of_data);
+      c.write(writer.ByteBuffer); // Send ACK for AVL DATA
+      c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
     }
   });
 });
@@ -131,8 +99,8 @@ function generateUniqueCode() {
 
 // Function to save data to the database
 async function saveData(imei, gpsData, ignition) {
-  const detail = gpsData.gps || {};
-  const ioElements = gpsData.ioElements || [];
+  const detail = gpsData.gps;
+  const ioElements = gpsData.ioElements;
 
   let lastData;
   try {
@@ -155,19 +123,19 @@ async function saveData(imei, gpsData, ignition) {
   }
 
   const detailsData = [
-    detail.latitude || 0,
-    detail.longitude || 0,
-    detail.altitude || 0,
-    detail.angle || 0,
-    detail.satellites || 0,
-    detail.speed || 0,
+    detail.latitude,
+    detail.longitude,
+    detail.altitude,
+    detail.angle,
+    detail.satellites,
+    detail.speed,
     ignition,
-    ioElements[1]?.value || null,
-    ioElements[2]?.value || null,
-    ioElements[5]?.value || null,
+    ioElements[1]?.value, // Optional chaining to avoid undefined errors
+    ioElements[2]?.value,
+    ioElements[5]?.value,
     imei,
-    JSON.stringify(gpsData.records || []),
-    codeunique,
+    JSON.stringify(gpsData.records),
+    codeunique
   ];
 
   try {
@@ -176,3 +144,14 @@ async function saveData(imei, gpsData, ignition) {
     console.error("Error inserting data:", error);
   }
 }
+
+
+
+
+
+
+
+
+
+
+
