@@ -76,7 +76,7 @@ const server = net.createServer((c) => {
         }
 
         // Save data only if ignition is ON
-        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
+        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0 && speed > 0) {
           await saveData(imei, donneGps[0], currentIgnition);
           console.log("Data recorded with ignition = 1.");
         }
