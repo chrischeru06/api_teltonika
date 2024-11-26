@@ -40,6 +40,8 @@ const server = net.createServer((c) => {
   });
 
   c.on('data', async (data) => {
+    console.log('Received data:', data);
+    
     const parser = new Parser(data);
     
     if (parser.isImei) {
@@ -50,17 +52,21 @@ const server = net.createServer((c) => {
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
-      if (donneGps.length > 0) {
+      if (Array.isArray(donneGps) && donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value of ioElements
+        const currentIgnition = ioElements[0]?.value; // Use optional chaining
 
         // Handle ignition transitions
         if (ignitionState === null || currentIgnition !== ignitionState) {
           if (ignitionState === 1 && currentIgnition === 0) {
             // Record data when ignition goes from ON to OFF
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data recorded with ignition = 0.");
+            if (parser.imei) {
+              await saveData(parser.imei, donneGps[0], currentIgnition);
+              console.log("Data recorded with ignition = 0.");
+            } else {
+              console.error("IMEI is not defined during ignition OFF.");
+            }
           }
 
           ignitionState = currentIgnition; // Update ignition state
@@ -72,16 +78,19 @@ const server = net.createServer((c) => {
 
         // Save data only if ignition is ON
         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-
-          if (currentIgnition ===1 && detail.speed > 0) {
-            await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Data recorded with ignition = 1 with speed > 0");
-         }
-         else {
-          console.log("Ignition is OFF or speed is 0, will not record data.");
+          if (currentIgnition === 1 && detail.speed > 0) {
+            if (parser.imei) {
+              await saveData(parser.imei, donneGps[0], currentIgnition);
+              console.log("Data recorded with ignition = 1 with speed > 0");
+            } else {
+              console.error("IMEI is not defined when saving data.");
+            }
+          } else {
+            console.log("Ignition is OFF or speed is 0, will not record data.");
+          }
         }
-
-        }
+      } else {
+        console.error("donneGps is undefined or not an array.");
       }
 
       const writer = new binutils.BinaryWriter();
@@ -151,13 +160,3 @@ async function saveData(imei, gpsData, ignition) {
     console.error("Error inserting data:", error);
   }
 }
-
-
-
-
-
-
-
-
-
-
