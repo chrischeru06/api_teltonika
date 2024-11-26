@@ -1,4 +1,4 @@
-/** Writen by Cerubala Christian Wann'y
+/** Written by Cerubala Christian Wann'y
  * email: wanny@mediabox.bi
  * tel: +25762442698
  * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
@@ -34,16 +34,15 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable to track ignition state
+  let speedZeroSaved = false; // Track if data with speed == 0 has been saved
 
   c.on('end', () => {
     console.log("Client disconnected");
   });
 
   c.on('data', async (data) => {
-    console.log('Received data:', data);
-    
     const parser = new Parser(data);
-    
+
     if (parser.isImei) {
       const imei = parser.imei;
       console.log("IMEI:", imei);
@@ -52,21 +51,17 @@ const server = net.createServer((c) => {
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
-      if (Array.isArray(donneGps) && donneGps.length > 0) {
+      if (donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0]?.value; // Use optional chaining
+        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value of ioElements
 
         // Handle ignition transitions
         if (ignitionState === null || currentIgnition !== ignitionState) {
           if (ignitionState === 1 && currentIgnition === 0) {
             // Record data when ignition goes from ON to OFF
-            if (parser.imei) {
-              await saveData(parser.imei, donneGps[0], currentIgnition);
-              console.log("Data recorded with ignition = 0.");
-            } else {
-              console.error("IMEI is not defined during ignition OFF.");
-            }
+            await saveData(imei, donneGps[0], currentIgnition);
+            console.log("Data recorded with ignition = 0.");
           }
 
           ignitionState = currentIgnition; // Update ignition state
@@ -74,23 +69,25 @@ const server = net.createServer((c) => {
           if (ignitionState === 1) {
             console.log("Ignition is ON, will continue to record data.");
           }
+
+          // Reset speedZeroSaved when ignition changes
+          speedZeroSaved = false;
         }
 
         // Save data only if ignition is ON
         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          if (currentIgnition === 1 && detail.speed > 0) {
-            if (parser.imei) {
-              await saveData(parser.imei, donneGps[0], currentIgnition);
-              console.log("Data recorded with ignition = 1 with speed > 0");
-            } else {
-              console.error("IMEI is not defined when saving data.");
+          if (detail.speed === 0) {
+            if (!speedZeroSaved) {
+              await saveData(imei, donneGps[0], currentIgnition);
+              console.log("Data recorded with speed = 0.");
+              speedZeroSaved = true; // Prevent saving again until speed changes
             }
           } else {
-            console.log("Ignition is OFF or speed is 0, will not record data.");
+            speedZeroSaved = false; // Allow saving data when speed changes
+            await saveData(imei, donneGps[0], currentIgnition);
+            console.log("Data recorded with speed > 0.");
           }
         }
-      } else {
-        console.error("donneGps is undefined or not an array.");
       }
 
       const writer = new binutils.BinaryWriter();
