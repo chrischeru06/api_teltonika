@@ -62,6 +62,11 @@ const server = net.createServer((c) => {
             await saveData(imei, donneGps[0], currentIgnition);
             console.log("Data recorded with ignition = 0.");
           }
+          if (ignitionState === 1 && detail.speed === 0) {
+            // Record speed == 0
+            await saveData(imei, donneGps[0], currentIgnition);
+            console.log("save with speed  = 0");
+          }
 
           ignitionState = currentIgnition; // Update ignition state
 
@@ -70,11 +75,18 @@ const server = net.createServer((c) => {
           }
         }
 
-        // Save data only if ignition is ON
-        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Data recorded with ignition = 1.");
-        }
+      // Enregistrer les données uniquement si l'allumage est activé
+         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0 && detail.speed > 0) {
+               try {
+                      await saveData(imei, donneGps[0], currentIgnition);
+                      console.log("Données enregistrées avec l'allumage = 1 et vitesse diff de 0");
+               } catch (error) {
+                      console.error("Erreur lors de l'enregistrement des données :", error);
+               }
+                    } 
+        else {
+                console.log("Conditions non remplies pour l'enregistrement des données.");
+          }
       }
 
       const writer = new binutils.BinaryWriter();
