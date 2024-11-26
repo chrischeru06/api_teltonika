@@ -1,4 +1,4 @@
-/** Writen by Cerubala Christian Wann'y
+/** Written by Cerubala Christian Wann'y
  * email: wanny@mediabox.bi
  * tel: +25762442698
  * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
@@ -34,9 +34,12 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable to track ignition state
+  let previousSpeed = null;  // Variable to track previous speed
+  let sendInterval = null;    // Timer for sending data at intervals
 
   c.on('end', () => {
     console.log("Client disconnected");
+    clearInterval(sendInterval); // Clear interval on disconnect
   });
 
   c.on('data', async (data) => {
@@ -53,7 +56,8 @@ const server = net.createServer((c) => {
       if (donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value of ioElements
+        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value
+        const currentSpeed = detail.speed; // Get the current speed
 
         // Handle ignition transitions
         if (ignitionState === null || currentIgnition !== ignitionState) {
@@ -67,10 +71,30 @@ const server = net.createServer((c) => {
 
           if (ignitionState === 1) {
             console.log("Ignition is ON, will continue to record data.");
+
+            // Start sending data every 5 seconds if speed is 0
+            if (currentSpeed === 0) {
+              clearInterval(sendInterval); // Clear any existing interval
+              sendInterval = setInterval(async () => {
+                await saveData(imei, donneGps[0], currentIgnition);
+                console.log("Sending data at speed = 0");
+              }, 5000);
+            }
+          } else {
+            clearInterval(sendInterval); // Clear interval if ignition is OFF
           }
         }
 
-        // Save data only if ignition is ON
+        // Check if speed has changed from 0 to > 0
+        if (ignitionState === 1 && currentSpeed > 0) {
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Speed is now greater than 0, continuing to send data.");
+        }
+
+        // Update previous speed
+        previousSpeed = currentSpeed;
+
+        // Save data only if ignition is ON and speed is valid
         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
           await saveData(imei, donneGps[0], currentIgnition);
           console.log("Data recorded with ignition = 1.");
