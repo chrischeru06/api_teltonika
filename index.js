@@ -44,12 +44,19 @@ const server = net.createServer((c) => {
 
   c.on('data', async (data) => {
     const parser = new Parser(data);
-    
+    let imei; // Declare imei here
+
     if (parser.isImei) {
-      const imei = parser.imei;
+      imei = parser.imei; // Assign imei when valid
       console.log("IMEI:", imei);
       c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
     } else {
+      // Ensure imei is defined before using it
+      if (!imei) {
+        console.error("IMEI is not defined. Unable to process data.");
+        return; // Exit if IMEI is not set
+      }
+
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
