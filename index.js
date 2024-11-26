@@ -34,7 +34,6 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable to track ignition state
-  let previousSpeed = null;  // Variable to track previous speed
   let sendInterval = null;    // Timer for sending data at intervals
   let imei;                  // Declare imei here
 
@@ -62,9 +61,15 @@ const server = net.createServer((c) => {
     const avl = parser.getAvl();
     const donneGps = avl.records;
 
-    if (donneGps.length > 0) {
+    if (donneGps && donneGps.length > 0) {
       const detail = donneGps[0].gps;
       const ioElements = donneGps[0].ioElements;
+
+      if (!ioElements || ioElements.length === 0) {
+        console.error("IO Elements are not defined. Unable to process data.");
+        return; // Exit if IO elements are not valid
+      }
+
       const currentIgnition = ioElements[0].value; // Assuming ignition is the first value
       const currentSpeed = detail.speed; // Get the current speed
 
@@ -99,9 +104,6 @@ const server = net.createServer((c) => {
         await saveData(imei, donneGps[0], currentIgnition);
         console.log("Speed is now greater than 0, continuing to send data.");
       }
-
-      // Update previous speed
-      previousSpeed = currentSpeed;
 
       // Save data only if ignition is ON and speed is valid
       if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
