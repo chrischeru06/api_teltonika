@@ -1,4 +1,4 @@
-/** Writen by Cerubala Christian Wann'y
+/** Written by Cerubala Christian Wann'y
  * email: wanny@mediabox.bi
  * tel: +25762442698
  * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
@@ -34,6 +34,7 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable to track ignition state
+  let imei; // Declare imei here
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -43,50 +44,65 @@ const server = net.createServer((c) => {
     const parser = new Parser(data);
     
     if (parser.isImei) {
-      const imei = parser.imei;
+      imei = parser.imei; // Assign imei when valid
       console.log("IMEI:", imei);
       c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
-    } else {
-      const avl = parser.getAvl();
-      const donneGps = avl.records;
+      return; // Exit to avoid processing further without IMEI
+    }
 
-      if (donneGps.length > 0) {
-        const detail = donneGps[0].gps;
-        const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value of ioElements
+    // Ensure IMEI is defined before processing other data
+    if (!imei) {
+      console.error("IMEI is not defined. Unable to process data.");
+      return; // Exit if IMEI is not set
+    }
 
-        // Handle ignition transitions
-        if (ignitionState === null || currentIgnition !== ignitionState) {
-          if (ignitionState === 1 && currentIgnition === 0) {
-            // Record data when ignition goes from ON to OFF
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data recorded with ignition = 0.");
-          }
-          if (ignitionState === 1 && currentIgnition === 0 && speed === 0 ) {
-            // Record data when ignition goes from ON to OFF
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data recorded with speed = 0");
-          }
+    const avl = parser.getAvl();
+    const donneGps = avl.records;
 
-          ignitionState = currentIgnition; // Update ignition state
+    // Check if donneGps is defined and has records
+    if (donneGps && donneGps.length > 0) {
+      const detail = donneGps[0].gps;
+      const ioElements = donneGps[0].ioElements;
 
-          if (ignitionState === 1 && speed > 0) {
-            console.log("Ignition is ON, will continue to record data.");
-          }
-        }
-
-        // Save data only if ignition is ON
-        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0 && speed > 0) {
-          await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Data recorded with ignition = 1.");
-        }
+      // Check if ioElements is defined and has elements
+      if (!ioElements || ioElements.length === 0) {
+        console.error("IO Elements are not defined or empty.");
+        return; // Exit if IO elements are not valid
       }
 
-      const writer = new binutils.BinaryWriter();
-      writer.WriteInt32(avl.number_of_data);
-      c.write(writer.ByteBuffer); // Send ACK for AVL DATA
-      c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+      const currentIgnition = ioElements[0]?.value; // Assuming ignition is the first value
+      const speed = detail.speed; // Extract speed from detail
+
+      // Handle ignition transitions
+      if (ignitionState === null || currentIgnition !== ignitionState) {
+        if (ignitionState === 1 && currentIgnition === 0) {
+          // Record data when ignition goes from ON to OFF
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Data recorded with ignition = 0.");
+        }
+
+        ignitionState = currentIgnition; // Update ignition state
+
+        // Save data only if ignition is ON and speed > 0
+        if (ignitionState === 1 && speed > 0) {
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Data recorded with ignition = 1 and speed > 0.");
+        }
+      } else {
+        // If ignition is ON and speed > 0, continue saving data
+        if (ignitionState === 1 && speed > 0) {
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Continuing to record data with ignition ON and speed > 0.");
+        }
+      }
+    } else {
+      console.error("No GPS data available in donneGps.");
     }
+
+    const writer = new binutils.BinaryWriter();
+    writer.WriteInt32(avl.number_of_data);
+    c.write(writer.ByteBuffer); // Send ACK for AVL DATA
+    c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
   });
 });
 
