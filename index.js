@@ -1,4 +1,4 @@
-/** Written by Cerubala Christian Wann'y
+/** Writen by Cerubala Christian Wann'y
  * email: wanny@mediabox.bi
  * tel: +25762442698
  * This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
@@ -34,7 +34,6 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable to track ignition state
-  let speedZeroSaved = false; // Track if data with speed == 0 has been saved
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -42,7 +41,7 @@ const server = net.createServer((c) => {
 
   c.on('data', async (data) => {
     const parser = new Parser(data);
-
+    
     if (parser.isImei) {
       const imei = parser.imei;
       console.log("IMEI:", imei);
@@ -69,24 +68,12 @@ const server = net.createServer((c) => {
           if (ignitionState === 1) {
             console.log("Ignition is ON, will continue to record data.");
           }
-
-          // Reset speedZeroSaved when ignition changes
-          speedZeroSaved = false;
         }
 
         // Save data only if ignition is ON
         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          if (detail.speed === 0) {
-            if (!speedZeroSaved) {
-              await saveData(imei, donneGps[0], currentIgnition);
-              console.log("Data recorded with speed = 0.");
-              speedZeroSaved = true; // Prevent saving again until speed changes
-            }
-          } else {
-            speedZeroSaved = false; // Allow saving data when speed changes
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data recorded with speed > 0.");
-          }
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Data recorded with ignition = 1.");
         }
       }
 
@@ -157,3 +144,13 @@ async function saveData(imei, gpsData, ignition) {
     console.error("Error inserting data:", error);
   }
 }
+
+
+
+
+
+
+
+
+
+
