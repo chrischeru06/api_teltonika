@@ -79,12 +79,12 @@ const server = net.createServer((c) => {
 
         // Save data only if ignition is ON
         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          if (currentIgnition === 1 && detail.speed > 0) {
+         // if (currentIgnition === 1 && detail.speed > 0) {
             await saveData(imei, donneGps[0], currentIgnition);
             console.log("Data recorded with ignition = 1 with speed > 0");
-          } else {
-            console.log("Ignition is OFF or speed is 0, will not record data.");
-          }
+          // } else {
+          //   console.log("Ignition is OFF or speed is 0, will not record data.");
+          // }
         }
       } else {
         console.warn("Aucun enregistrement GPS trouvé ou records est indéfini.");
