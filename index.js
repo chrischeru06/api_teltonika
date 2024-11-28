@@ -34,6 +34,7 @@ const server = net.createServer((c) => {
   console.log("Client connected");
 
   let ignitionState = null; // Variable to track ignition state
+  let imei; // Déclaration de imei
 
   c.on('end', () => {
     console.log("Client disconnected");
@@ -43,10 +44,15 @@ const server = net.createServer((c) => {
     const parser = new Parser(data);
     
     if (parser.isImei) {
-      const imei = parser.imei;
+      imei = parser.imei; // Assigne imei seulement si disponible
       console.log("IMEI:", imei);
       c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
     } else {
+      if (!imei) {
+        console.error("IMEI non défini, impossible de continuer.");
+        return; // Sortir si imei n'est pas défini
+      }
+
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
@@ -72,15 +78,12 @@ const server = net.createServer((c) => {
 
         // Save data only if ignition is ON
         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-
-          if (currentIgnition ===1 && detail.speed > 0) {
+          if (currentIgnition === 1 && detail.speed > 0) {
             await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Data recorded with ignition = 1 with speed > 0");
-         }
-         else {
-          console.log("Ignition is OFF or speed is 0, will not record data.");
-        }
-
+            console.log("Data recorded with ignition = 1 with speed > 0");
+          } else {
+            console.log("Ignition is OFF or speed is 0, will not record data.");
+          }
         }
       }
 
@@ -151,13 +154,3 @@ async function saveData(imei, gpsData, ignition) {
     console.error("Error inserting data:", error);
   }
 }
-
-
-
-
-
-
-
-
-
-
