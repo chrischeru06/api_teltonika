@@ -56,7 +56,8 @@ const server = net.createServer((c) => {
       const avl = parser.getAvl();
       const donneGps = avl.records;
 
-      if (donneGps.length > 0) {
+      // Vérifiez que donneGps est un tableau et qu'il a des éléments
+      if (Array.isArray(donneGps) && donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
         const currentIgnition = ioElements[0].value; // Assuming ignition is the first value of ioElements
@@ -85,6 +86,8 @@ const server = net.createServer((c) => {
             console.log("Ignition is OFF or speed is 0, will not record data.");
           }
         }
+      } else {
+        console.warn("Aucun enregistrement GPS trouvé ou records est indéfini.");
       }
 
       const writer = new binutils.BinaryWriter();
