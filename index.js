@@ -23,7 +23,7 @@ const connection = mysql.createConnection({
 connection.connect((error) => {
   if (error) {
     console.error("Error connecting to the database:", error);
-     return;
+    return;
   }
   console.log("Successfully connected to the database.");
 });
@@ -60,7 +60,7 @@ const server = net.createServer((c) => {
       if (Array.isArray(donneGps) && donneGps.length > 0) {
         const detail = donneGps[0].gps;
         const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0].value; // Assuming ignition is the first value of ioElements
+        const currentIgnition = ioElements[0]?.value; // Utilisation de l'optionnel pour éviter les erreurs
 
         // Handle ignition transitions
         if (ignitionState === null || currentIgnition !== ignitionState) {
@@ -79,12 +79,8 @@ const server = net.createServer((c) => {
 
         // Save data only if ignition is ON
         if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          if (currentIgnition === 1 && detail.speed > 0) {
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data recorded with ignition = 1 with speed > 0");
-           } else {
-             console.log("Ignition is OFF or speed is 0, will not record data.");
-           }
+          await saveData(imei, donneGps[0], currentIgnition);
+          console.log("Data recorded with ignition = 1 ");
         }
       } else {
         console.warn("Aucun enregistrement GPS trouvé ou records est indéfini.");
