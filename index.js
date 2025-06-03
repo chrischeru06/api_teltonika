@@ -3,7 +3,6 @@
  * Author: Cerubala Christian Wann'y
  * Email: wanny@mediabox.bi
  */
-
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const fs = require('fs');
@@ -232,14 +231,11 @@ const tcpServer = net.createServer(socket => {
                 DEVICE_UID, TRIP_START, TRIP_END, PATH_FILE
               ) VALUES (?, ?, ?, ?)
             `;
-
-            const tripFileName = path.basename(state.trip.path); // nom de fichier uniquement
-
             await db.execute(insertGeoPathQuery, [
               imei,
               geojson.features[0].properties.startTime,
               geojson.features[0].properties.endTime,
-              tripFileName
+              state.trip.path
             ]);
             console.log(`✅ Trip metadata saved to path_histo_trajet_geojson for IMEI: ${imei}`);
           } catch (metaErr) {
