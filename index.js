@@ -26,10 +26,10 @@ const deviceState = new Map();
 const dbConfig = {
   host: 'localhost',
   user: 'root',
-  password: 'Chris@1996..', // Remplace par ton mot de passe
+  password: 'Chris@1996..',
   database: 'car_trucking_v3',
   waitForConnections: true,
-  connectionLimit: 50,  // Ajuste selon tes ressources
+  connectionLimit: 50,
   queueLimit: 0,
 };
 
@@ -41,7 +41,7 @@ async function initDbPool() {
     console.log('✅ MySQL pool created');
   } catch (err) {
     console.error('❌ MySQL pool creation failed:', err.message);
-    setTimeout(initDbPool, 5000); // retry after 5 sec
+    setTimeout(initDbPool, 5000);
   }
 }
 initDbPool();
@@ -56,33 +56,30 @@ db?.on('error', err => {
   }
 });
 
-// === Insert tracking data with error management ===
+// === Convert ISO Date to MySQL Format ===
+function toMysqlDatetime(isoDate) {
+  return isoDate.replace('T', ' ').replace('Z', '').split('.')[0];
+}
+
+// === Insert tracking data ===
 async function insertTrackingData(values) {
   const insertQuery = `
     INSERT INTO tracking_data (
-      latitude, longitude, vitesse, altitude, date, json,
+      latitude, longitude, vitesse, altitude, date,
       angle, satellites, mouvement, gnss_statut,
-      device_uid, ignition, CODE_COURSE
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      device_uid, ignition
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
 
   try {
     await db.execute(insertQuery, values);
-    console.log(`✅ Data inserted into DB for IMEI: ${values[10]}`); // device_uid
+    console.log(`✅ Data inserted into DB for IMEI: ${values[10]}`);
   } catch (dbErr) {
     console.error('❌ MySQL Insert Error:');
     console.error('  Query:', insertQuery.replace(/\s+/g, ' '));
     console.error('  Values:', values);
     console.error('  Error message:', dbErr.message);
-    // Ici tu peux aussi log vers un fichier, système externe, etc.
   }
-}
-
-// === Unique Code Generator ===
-function generateUniqueCode() {
-  const timestamp = new Date().toISOString();
-  const randomNum = Math.floor(Math.random() * 1000);
-  return `${timestamp}-${randomNum}`;
 }
 
 // === TCP Server ===
@@ -119,7 +116,7 @@ const tcpServer = net.createServer(socket => {
         socket.write(Buffer.from([0x01]));
 
         if (!deviceState.has(imei)) {
-          deviceState.set(imei, { lastIgnition: null, currentCodeCourse: null });
+          deviceState.set(imei, { lastIgnition: null });
 
           const imeiFolder = path.join(IMEI_FOLDER_BASE, imei);
           if (!fs.existsSync(imeiFolder)) {
@@ -151,33 +148,38 @@ const tcpServer = net.createServer(socket => {
           gnss_statut: ioElements.find(io => io.id === 0x03)?.value || 1,
         };
 
-        // Génère un nouveau code course si l'ignition change
-        if ((io.ignition === 1 && state.lastIgnition === 0) || (io.ignition === 0 && state.lastIgnition === 1)) {
-          state.currentCodeCourse = generateUniqueCode();
-        }
+        const timestampIso = toMysqlDatetime(new Date(timestamp).toISOString());
 
-        const timestampIso = new Date(timestamp).toISOString();
-
-        // Prépare les valeurs pour l'insertion
         const values = [
           gps.latitude.toString(),
           gps.longitude.toString(),
           gps.speed || 0,
           gps.altitude.toString(),
           timestampIso,
-          JSON.stringify(record),
           gps.angle.toString(),
           gps.satellites.toString(),
           io.mouvement,
           io.gnss_statut,
           imei,
-          io.ignition,
-          state.currentCodeCourse,
+          io.ignition
         ];
 
-        await insertTrackingData(values);
+        // ✅ Affiche les données GPS et IO reçues sous forme de JSON lisible
+        console.log('🧾 Parsed JSON Data:', JSON.stringify({
+          imei,
+          timestamp: timestampIso,
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          speed: gps.speed,
+          altitude: gps.altitude,
+          angle: gps.angle,
+          satellites: gps.satellites,
+          ignition: io.ignition,
+          mouvement: io.mouvement,
+          gnss_statut: io.gnss_statut,
+        }, null, 2));
 
-        // Mets à jour l’état
+        await insertTrackingData(values);
         state.lastIgnition = io.ignition;
       }
     } catch (err) {
