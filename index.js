@@ -15,8 +15,10 @@ const deviceState = new Map();
 const TCP_PORT = 2354;
 const TCP_TIMEOUT = 300000; // 5 minutes
 
-// === Folder for IMEI Data ===
-const IMEI_FOLDER_BASE = '/var/www/html';
+// === Define where IMEI folders should be created ===
+const IMEI_FOLDER_BASE = '/var/www/html/IMEI';
+
+// Ensure the base directory exists
 if (!fs.existsSync(IMEI_FOLDER_BASE)) {
   fs.mkdirSync(IMEI_FOLDER_BASE, { recursive: true });
 }
@@ -54,11 +56,11 @@ const tcpServer = net.createServer((socket) => {
         if (!deviceState.has(imei)) {
           deviceState.set(imei, { lastIgnition: null, currentCodeCourse: null });
 
-          // Create folder for the new IMEI
+          // Create IMEI folder inside /var/www/html/IMEI/
           const imeiFolder = path.join(IMEI_FOLDER_BASE, imei);
           if (!fs.existsSync(imeiFolder)) {
             fs.mkdirSync(imeiFolder, { recursive: true });
-            console.log(` Folder created for IMEI: ${imeiFolder}`);
+            console.log(` Folder created for IMEI at: ${imeiFolder}`);
           }
         }
 
@@ -111,7 +113,7 @@ const tcpServer = net.createServer((socket) => {
           },
         };
 
-        console.log("📤 Data:", JSON.stringify(dataToLog, null, 2));
+        console.log(" Data:", JSON.stringify(dataToLog, null, 2));
         state.lastIgnition = io.ignition;
       }
 
