@@ -3,6 +3,7 @@
  * Author: Cerubala Christian Wann'y
  * Email: wanny@mediabox.bi
  */
+
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
 const fs = require('fs');
@@ -55,6 +56,12 @@ db?.on('error', err => {
 
 function toMysqlDatetime(isoDate) {
   return isoDate.replace('T', ' ').replace('Z', '').split('.')[0];
+}
+
+function formatDateForFilename(date) {
+  const d = new Date(date);
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
 async function insertTrackingData(values) {
@@ -167,7 +174,7 @@ const tcpServer = net.createServer(socket => {
         const ignitionChanged = state.lastIgnition !== null && state.lastIgnition !== io.ignition;
 
         if (io.ignition === 1 && state.lastIgnition !== 1) {
-          const startTime = new Date(timestamp).toISOString().replace(/[:.]/g, '-');
+          const startTime = formatDateForFilename(timestamp);
           const fileName = `trip_${startTime}.geojson`;
           const tripFilePath = path.join(IMEI_FOLDER_BASE, imei, fileName);
           state.trip = {
@@ -225,11 +232,14 @@ const tcpServer = net.createServer(socket => {
                 DEVICE_UID, TRIP_START, TRIP_END, PATH_FILE
               ) VALUES (?, ?, ?, ?)
             `;
+
+            const tripFileName = path.basename(state.trip.path); // nom de fichier uniquement
+
             await db.execute(insertGeoPathQuery, [
               imei,
               geojson.features[0].properties.startTime,
               geojson.features[0].properties.endTime,
-              state.trip.path
+              tripFileName
             ]);
             console.log(`✅ Trip metadata saved to path_histo_trajet_geojson for IMEI: ${imei}`);
           } catch (metaErr) {
