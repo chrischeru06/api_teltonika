@@ -73,7 +73,7 @@ async function insertTrackingData(values) {
 
   try {
     await db.execute(insertQuery, values);
-    console.log(`✅ Data inserted into DB for IMEI: ${values[10]}`);
+    console.log(`✅ Data inserted into DB for IMEI: ${values[9]}`);
   } catch (dbErr) {
     console.error('❌ MySQL Insert Error:');
     console.error('  Query:', insertQuery.replace(/\s+/g, ' '));
@@ -117,7 +117,6 @@ const tcpServer = net.createServer(socket => {
 
         if (!deviceState.has(imei)) {
           deviceState.set(imei, { lastIgnition: null });
-
           const imeiFolder = path.join(IMEI_FOLDER_BASE, imei);
           if (!fs.existsSync(imeiFolder)) {
             fs.mkdirSync(imeiFolder, { recursive: true });
@@ -143,28 +142,16 @@ const tcpServer = net.createServer(socket => {
           continue;
         }
 
+        // Lire IO par label
         const io = {
-          ignition: ioElements.find(io => io.id === 0x01)?.value || 0,
-          mouvement: ioElements.find(io => io.id === 0x02)?.value || 0,
-          gnss_statut: ioElements.find(io => io.id === 0x03)?.value || 1,
+          ignition: ioElements.find(io => io.label === 'Ignition')?.value || 0,
+          mouvement: ioElements.find(io => io.label === 'Movement')?.value || 0,
+          gnss_statut: ioElements.find(io => io.label === 'GNSS Status')?.value || 1,
         };
 
         const timestampIso = toMysqlDatetime(new Date(timestamp).toISOString());
 
-        const values = [
-          gps.latitude.toString(),
-          gps.longitude.toString(),
-          gps.speed || 0,
-          gps.altitude.toString(),
-          timestampIso,
-          gps.angle.toString(),
-          gps.satellites.toString(),
-          io.mouvement,
-          io.gnss_statut,
-          imei,
-          io.ignition
-        ];
-
+        // Log JSON avec bons labels
         console.log('🧾 Parsed JSON Data:', JSON.stringify({
           imei,
           timestamp: timestampIso,
@@ -174,13 +161,15 @@ const tcpServer = net.createServer(socket => {
           altitude: gps.altitude,
           angle: gps.angle,
           satellites: gps.satellites,
-          ignition: io.ignition,
-          mouvement: io.mouvement,
+          Ignition: io.ignition,
+          Mouvement: io.mouvement,
           gnss_statut: io.gnss_statut,
         }, null, 2));
 
+        // Détecter changement d'ignition
         const ignitionChanged = state.lastIgnition !== null && state.lastIgnition !== io.ignition;
 
+        // Si ignition passe de 0 à 1 -> début trip
         if (io.ignition === 1 && state.lastIgnition !== 1) {
           const startTime = new Date(timestamp).toISOString().replace(/[:.]/g, '-');
           const fileName = `trip_${startTime}.geojson`;
@@ -192,6 +181,7 @@ const tcpServer = net.createServer(socket => {
           console.log(`📁 New trip started for IMEI ${imei} → ${fileName}`);
         }
 
+        // Enregistrer les points dans trip si ignition=1
         if (io.ignition === 1 && state.trip) {
           state.trip.points.push({
             geometry: {
@@ -206,12 +196,29 @@ const tcpServer = net.createServer(socket => {
               satellites: gps.satellites
             }
           });
+          // Insérer en base pendant ignition=1 uniquement
+          const values = [
+            gps.latitude.toString(),
+            gps.longitude.toString(),
+            gps.speed || 0,
+            gps.altitude.toString(),
+            timestampIso,
+            gps.angle.toString(),
+            gps.satellites.toString(),
+            io.mouvement,
+            io.gnss_statut,
+            imei,
+            io.ignition
+          ];
+          await insertTrackingData(values);
         }
 
-        await insertTrackingData(values);
+        // Mettre à jour l'état lastIgnition
         state.lastIgnition = io.ignition;
 
+        // Si ignition passe de 1 à 0 -> fin trip: écrire fichier GeoJSON LineString et nettoyer DB
         if (io.ignition === 0 && ignitionChanged && state.trip) {
+          // Créer GeoJSON LineString
           const geojson = {
             type: "FeatureCollection",
             features: [
@@ -231,14 +238,13 @@ const tcpServer = net.createServer(socket => {
             ]
           };
 
+          // Sauvegarder fichier
           fs.writeFileSync(state.trip.path, JSON.stringify(geojson, null, 2));
           console.log(`✅ Trip saved to ${state.trip.path}`);
 
+          // Supprimer données dans DB pour cet IMEI
           try {
-            const deleteQuery = `
-              DELETE FROM tracking_data
-              WHERE device_uid = ?
-            `;
+            const deleteQuery = `DELETE FROM tracking_data WHERE device_uid = ?`;
             await db.execute(deleteQuery, [imei]);
             console.log(`🧹 DB cleaned for IMEI: ${imei}`);
           } catch (err) {
