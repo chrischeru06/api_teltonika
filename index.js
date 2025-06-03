@@ -56,12 +56,6 @@ db?.on('error', err => {
   }
 });
 
-// === Convert ISO Date to MySQL Format ===
-function toMysqlDatetime(isoDate) {
-  return isoDate.replace('T', ' ').replace('Z', '').split('.')[0];
-}
-
-// === Insert tracking data ===
 async function insertTrackingData(values) {
   const insertQuery = `
     INSERT INTO tracking_data (
@@ -73,20 +67,49 @@ async function insertTrackingData(values) {
 
   try {
     await db.execute(insertQuery, values);
-    console.log(`✅ Data inserted into DB for IMEI: ${values[10]}`);
+    console.log(`✅ Data inserted into DB for IMEI: ${values[9]}`);
   } catch (dbErr) {
-    console.error('❌ MySQL Insert Error:');
-    console.error('  Query:', insertQuery.replace(/\s+/g, ' '));
-    console.error('  Values:', values);
-    console.error('  Error message:', dbErr.message);
+    console.error('❌ MySQL Insert Error:', dbErr.message);
   }
 }
 
-// === TCP Server ===
+async function deleteTripFromDB(imei) {
+  const deleteQuery = `DELETE FROM tracking_data WHERE device_uid = ?`;
+  try {
+    await db.execute(deleteQuery, [imei]);
+    console.log(`🗑️ Old trip data deleted from DB for IMEI ${imei}`);
+  } catch (err) {
+    console.error('❌ Error deleting trip data from DB:', err.message);
+  }
+}
+
+async function saveTripAsGeoJSON(imei, tripPoints) {
+  const geojson = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {
+          imei,
+          start: tripPoints[0].timestamp,
+          end: tripPoints[tripPoints.length - 1].timestamp
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: tripPoints.map(p => [p.longitude, p.latitude])
+        }
+      }
+    ]
+  };
+
+  const filePath = path.join(IMEI_FOLDER_BASE, imei, `trip-${Date.now()}.geojson`);
+  fs.writeFileSync(filePath, JSON.stringify(geojson, null, 2));
+  console.log(`🗺️ Trip saved for IMEI ${imei} at ${filePath}`);
+}
+
 const tcpServer = net.createServer(socket => {
   console.log('🟢 TCP client connected');
   let imei = null;
-
   socket.setTimeout(TCP_TIMEOUT);
 
   socket.on('timeout', () => {
@@ -107,7 +130,6 @@ const tcpServer = net.createServer(socket => {
   socket.on('data', async data => {
     try {
       console.log('📥 Raw data received (hex):', data.toString('hex'));
-
       const parser = new Parser(data);
 
       if (parser.isImei) {
@@ -116,7 +138,7 @@ const tcpServer = net.createServer(socket => {
         socket.write(Buffer.from([0x01]));
 
         if (!deviceState.has(imei)) {
-          deviceState.set(imei, { lastIgnition: null });
+          deviceState.set(imei, { lastIgnition: null, currentTripData: [] });
 
           const imeiFolder = path.join(IMEI_FOLDER_BASE, imei);
           if (!fs.existsSync(imeiFolder)) {
@@ -148,38 +170,44 @@ const tcpServer = net.createServer(socket => {
           gnss_statut: ioElements.find(io => io.id === 0x03)?.value || 1,
         };
 
-        const timestampIso = toMysqlDatetime(new Date(timestamp).toISOString());
+        const timestampIso = new Date(timestamp).toISOString();
 
-        const values = [
-          gps.latitude.toString(),
-          gps.longitude.toString(),
-          gps.speed || 0,
-          gps.altitude.toString(),
-          timestampIso,
-          gps.angle.toString(),
-          gps.satellites.toString(),
-          io.mouvement,
-          io.gnss_statut,
-          imei,
-          io.ignition
-        ];
+        if (io.ignition === 1) {
+          if (state.lastIgnition === 0 || !state.currentTripData) {
+            state.currentTripData = [];
+          }
 
-        // ✅ Affiche les données GPS et IO reçues sous forme de JSON lisible
-        console.log('🧾 Parsed JSON Data:', JSON.stringify({
-          imei,
-          timestamp: timestampIso,
-          latitude: gps.latitude,
-          longitude: gps.longitude,
-          speed: gps.speed,
-          altitude: gps.altitude,
-          angle: gps.angle,
-          satellites: gps.satellites,
-          ignition: io.ignition,
-          mouvement: io.mouvement,
-          gnss_statut: io.gnss_statut,
-        }, null, 2));
+          state.currentTripData.push({
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            timestamp: timestampIso
+          });
 
-        await insertTrackingData(values);
+          const values = [
+            gps.latitude.toString(),
+            gps.longitude.toString(),
+            gps.speed || 0,
+            gps.altitude.toString(),
+            timestampIso,
+            gps.angle.toString(),
+            gps.satellites.toString(),
+            io.mouvement,
+            io.gnss_statut,
+            imei,
+            io.ignition
+          ];
+
+          await insertTrackingData(values);
+        }
+        else if (io.ignition === 0 && state.lastIgnition === 1) {
+          const tripPoints = state.currentTripData || [];
+          if (tripPoints.length > 1) {
+            await saveTripAsGeoJSON(imei, tripPoints);
+            await deleteTripFromDB(imei);
+          }
+          state.currentTripData = [];
+        }
+
         state.lastIgnition = io.ignition;
       }
     } catch (err) {
@@ -188,7 +216,6 @@ const tcpServer = net.createServer(socket => {
   });
 });
 
-// === Start TCP Server ===
 tcpServer.listen(TCP_PORT, () => {
   console.log(`🚀 TCP Server listening on port ${TCP_PORT}`);
 });
