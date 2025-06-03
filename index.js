@@ -105,7 +105,7 @@ const tcpServer = net.createServer(socket => {
         socket.write(Buffer.from([0x01]));
 
         if (!deviceState.has(imei)) {
-          deviceState.set(imei, { lastIgnition: null, lastSaved: 0 });
+          deviceState.set(imei, { lastIgnition: null });
 
           const imeiFolder = path.join(IMEI_FOLDER_BASE, imei);
           if (!fs.existsSync(imeiFolder)) {
@@ -134,8 +134,7 @@ const tcpServer = net.createServer(socket => {
           gnss_statut: ioElements.find(io => io.label === 'GNSS Status')?.value || 1,
         };
 
-        const isoTime = new Date(timestamp).toISOString();
-        const timestampIso = toMysqlDatetime(isoTime);
+        const timestampIso = toMysqlDatetime(new Date(timestamp).toISOString());
 
         const values = [
           gps.latitude.toString(),
@@ -165,11 +164,10 @@ const tcpServer = net.createServer(socket => {
           gnss_statut: io.gnss_statut,
         }, null, 2));
 
-        const now = Date.now();
         const ignitionChanged = state.lastIgnition !== null && state.lastIgnition !== io.ignition;
 
         if (io.ignition === 1 && state.lastIgnition !== 1) {
-          const startTime = toMysqlDatetime(isoTime).replace(/[: ]/g, '-');
+          const startTime = new Date(timestamp).toISOString().replace(/[:.]/g, '-');
           const fileName = `trip_${startTime}.geojson`;
           const tripFilePath = path.join(IMEI_FOLDER_BASE, imei, fileName);
           state.trip = {
@@ -195,11 +193,7 @@ const tcpServer = net.createServer(socket => {
           });
         }
 
-        if (io.ignition === 1 || (io.ignition === 0 && now - state.lastSaved >= 180000)) {
-          await insertTrackingData(values);
-          state.lastSaved = now;
-        }
-
+        await insertTrackingData(values);
         state.lastIgnition = io.ignition;
 
         if (io.ignition === 0 && ignitionChanged && state.trip) {
