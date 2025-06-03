@@ -5,6 +5,8 @@
  */
 const net = require('net');
 const Parser = require('teltonika-parser-ex');
+const fs = require('fs');
+const path = require('path');
 
 // === State Memory ===
 const deviceState = new Map();
@@ -12,6 +14,12 @@ const deviceState = new Map();
 // === Ports ===
 const TCP_PORT = 2354;
 const TCP_TIMEOUT = 300000; // 5 minutes
+
+// === Folder for IMEI Data ===
+const IMEI_FOLDER_BASE = '/var/www/html';
+if (!fs.existsSync(IMEI_FOLDER_BASE)) {
+  fs.mkdirSync(IMEI_FOLDER_BASE, { recursive: true });
+}
 
 // === TCP Server ===
 const tcpServer = net.createServer((socket) => {
@@ -45,6 +53,13 @@ const tcpServer = net.createServer((socket) => {
 
         if (!deviceState.has(imei)) {
           deviceState.set(imei, { lastIgnition: null, currentCodeCourse: null });
+
+          // Create folder for the new IMEI
+          const imeiFolder = path.join(IMEI_FOLDER_BASE, imei);
+          if (!fs.existsSync(imeiFolder)) {
+            fs.mkdirSync(imeiFolder, { recursive: true });
+            console.log(` Folder created for IMEI: ${imeiFolder}`);
+          }
         }
 
         return;
@@ -96,7 +111,7 @@ const tcpServer = net.createServer((socket) => {
           },
         };
 
-        console.log(" Data:", JSON.stringify(dataToLog, null, 2));
+        console.log("📤 Data:", JSON.stringify(dataToLog, null, 2));
         state.lastIgnition = io.ignition;
       }
 
@@ -117,4 +132,5 @@ function generateUniqueCode() {
   const randomNum = Math.floor(Math.random() * 1000);
   return `${timestamp}-${randomNum}`;
 }
+
 
