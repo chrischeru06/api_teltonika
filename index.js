@@ -57,12 +57,6 @@ function toMysqlDatetime(isoDate) {
   return isoDate.replace('T', ' ').replace('Z', '').split('.')[0];
 }
 
-function formatDateForFilename(date) {
-  const d = new Date(date);
-  const pad = n => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-}
-
 async function insertTrackingData(values) {
   const insertQuery = `
     INSERT INTO tracking_data (
@@ -111,7 +105,7 @@ const tcpServer = net.createServer(socket => {
         socket.write(Buffer.from([0x01]));
 
         if (!deviceState.has(imei)) {
-          deviceState.set(imei, { lastIgnition: null });
+          deviceState.set(imei, { lastIgnition: null, lastInsertAt: 0 });
 
           const imeiFolder = path.join(IMEI_FOLDER_BASE, imei);
           if (!fs.existsSync(imeiFolder)) {
@@ -156,6 +150,8 @@ const tcpServer = net.createServer(socket => {
           io.ignition
         ];
 
+        const now = Date.now();
+
         console.log('🧾 Parsed JSON Data:', JSON.stringify({
           imei,
           timestamp: timestampIso,
@@ -173,7 +169,7 @@ const tcpServer = net.createServer(socket => {
         const ignitionChanged = state.lastIgnition !== null && state.lastIgnition !== io.ignition;
 
         if (io.ignition === 1 && state.lastIgnition !== 1) {
-          const startTime = formatDateForFilename(timestamp);
+          const startTime = new Date(timestamp).toISOString().replace(/[:.]/g, '-');
           const fileName = `trip_${startTime}.geojson`;
           const tripFilePath = path.join(IMEI_FOLDER_BASE, imei, fileName);
           state.trip = {
@@ -199,7 +195,20 @@ const tcpServer = net.createServer(socket => {
           });
         }
 
-        await insertTrackingData(values);
+        // Conditional DB Insert Logic
+        if (io.ignition === 1) {
+          await insertTrackingData(values);
+          state.lastInsertAt = now;
+        } else {
+          const last = state.lastInsertAt || 0;
+          if (now - last >= 180000) {
+            await insertTrackingData(values);
+            state.lastInsertAt = now;
+          } else {
+            console.log(`⏳ Ignition OFF → Skipped DB insert for IMEI ${imei} (less than 3 mins)`);
+          }
+        }
+
         state.lastIgnition = io.ignition;
 
         if (io.ignition === 0 && ignitionChanged && state.trip) {
