@@ -14,15 +14,12 @@ const TCP_PORT = 2354;
 const TCP_TIMEOUT = 300000; // 5 minutes
 const IMEI_FOLDER_BASE = '/var/www/html/IMEI';
 
-// Ensure IMEI base directory exists
 if (!fs.existsSync(IMEI_FOLDER_BASE)) {
   fs.mkdirSync(IMEI_FOLDER_BASE, { recursive: true });
 }
 
-// === State Memory ===
 const deviceState = new Map();
 
-// === MySQL DB Connection Config & Pool ===
 const dbConfig = {
   host: 'localhost',
   user: 'root',
@@ -56,12 +53,10 @@ db?.on('error', err => {
   }
 });
 
-// === Convert ISO Date to MySQL Format ===
 function toMysqlDatetime(isoDate) {
   return isoDate.replace('T', ' ').replace('Z', '').split('.')[0];
 }
 
-// === Insert tracking data ===
 async function insertTrackingData(values) {
   const insertQuery = `
     INSERT INTO tracking_data (
@@ -82,7 +77,6 @@ async function insertTrackingData(values) {
   }
 }
 
-// === TCP Server ===
 const tcpServer = net.createServer(socket => {
   console.log('🟢 TCP client connected');
   let imei = null;
@@ -211,7 +205,7 @@ const tcpServer = net.createServer(socket => {
         await insertTrackingData(values);
         state.lastIgnition = io.ignition;
 
-        if (io.ignition === 0 && ignitionChanged && state.trip) {
+        if (io.ignition === 0 && ignitionChanged && state.trip && state.trip.points.length > 1) {
           const geojson = {
             type: "FeatureCollection",
             features: [
@@ -223,26 +217,28 @@ const tcpServer = net.createServer(socket => {
                 },
                 properties: {
                   imei,
-                  startTime: state.trip.points[0]?.properties.timestamp,
-                  endTime: state.trip.points[state.trip.points.length - 1]?.properties.timestamp,
+                  startTime: state.trip.points[0].properties.timestamp,
+                  endTime: state.trip.points[state.trip.points.length - 1].properties.timestamp,
                   totalPoints: state.trip.points.length
                 }
               }
             ]
           };
 
-          fs.writeFileSync(state.trip.path, JSON.stringify(geojson, null, 2));
-          console.log(`✅ Trip saved to ${state.trip.path}`);
+          try {
+            fs.writeFileSync(state.trip.path, JSON.stringify(geojson, null, 2));
+            console.log(`✅ Trip saved to ${state.trip.path}`);
+          } catch (fileErr) {
+            console.error(`❌ Failed to save trip GeoJSON for IMEI ${imei}:`, fileErr);
+          }
 
           try {
-            console.log(`🧹 Deleting rows with ignition = 1 for IMEI: '${imei}'`);
-
             const deleteQuery = `
               DELETE FROM tracking_data
-              WHERE device_uid = ? AND ignition = 1
+              WHERE device_uid = ?
             `;
-            const [result] = await db.execute(deleteQuery, [imei.trim()]);
-            console.log(`🧹 Rows deleted: ${result.affectedRows}`);
+            await db.execute(deleteQuery, [imei]);
+            console.log(`🧹 DB cleaned for IMEI: ${imei}`);
           } catch (err) {
             console.error('❌ Failed to delete data from DB:', err.message);
           }
@@ -256,7 +252,6 @@ const tcpServer = net.createServer(socket => {
   });
 });
 
-// === Start TCP Server ===
 tcpServer.listen(TCP_PORT, () => {
   console.log(`🚀 TCP Server listening on port ${TCP_PORT}`);
 });
