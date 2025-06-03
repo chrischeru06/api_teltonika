@@ -1,158 +1,158 @@
-/** Writen by Cerubala Christian Wann'y
+/**
+ * Teltonika GPS Tracker Server - Local Development Version
+ * Author: Cerubala Christian Wann'y
+ * Email: wanny@mediabox.bi
+ */
 
-email: wanny@mediabox.bi
-tel: +25762442698
-This code is an API that helps to take data from Teltonika devices and insert the data into a MySQL server
-*/
-// Load environment variables from .env file
-require('dotenv').config();
-
+const fs = require('fs');
 const net = require('net');
+const http = require('http'); // For local WebSocket server
+const socketIo = require('socket.io');
 const Parser = require('teltonika-parser-ex');
-const binutils = require('binutils64');
-const mysql = require("mysql");
-const util = require("util");
 
-// Create a single MySQL connection using environment variables
-const connection = mysql.createConnection({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE,
-});
+// === State Memory ===
+const deviceState = new Map();
+const clients = new Set();
 
-// Connect to the database
-connection.connect((error) => {
-  if (error) {
-    console.error("Error connecting to the database:", error);
-    return;
-  }
-  console.log("Successfully connected to the database.");
-});
+// === Ports ===
+const TCP_PORT = 2354;
+const WSS_PORT = 2355;
+const TCP_TIMEOUT = 300000; // 5 minutes
 
-const query = util.promisify(connection.query).bind(connection);
+// === TCP Server ===
+const tcpServer = net.createServer((socket) => {
+  console.log("🟢 TCP client connected");
+  let imei = null;
 
-const server = net.createServer((c) => {
-  console.log("Client connected");
+  socket.setTimeout(TCP_TIMEOUT);
 
-  let ignitionState = null; // Variable to track ignition state
-  let imei; // Declare imei
-
-  c.on('end', () => {
-    console.log("Client disconnected");
+  socket.on('timeout', () => {
+    console.log("⏱️ TCP connection timed out");
+    socket.end();
   });
 
-  c.on('data', async (data) => {
-    const parser = new Parser(data);
+  socket.on('end', () => {
+    console.log("🔴 TCP client disconnected");
+    if (imei) {
+      deviceState.delete(imei);
+    }
+  });
 
-    if (parser.isImei) {
-      imei = parser.imei; // Assign imei only if available
-      console.log("IMEI:", imei);
-      c.write(Buffer.alloc(1, 1)); // Send ACK for IMEI
-    } else {
-      if (!imei) {
-        console.error("IMEI not defined, unable to continue.");
-        return; // Exit if imei is not defined
+  socket.on('data', async (data) => {
+    try {
+      console.log("📥 Raw data received (hex):", data.toString('hex'));
+
+      const parser = new Parser(data);
+
+      if (parser.isImei) {
+        imei = parser.imei;
+        console.log("✅ IMEI connected:", imei);
+        socket.write(Buffer.from([0x01])); // Acknowledge IMEI
+
+        if (!deviceState.has(imei)) {
+          deviceState.set(imei, { lastIgnition: null, currentCodeCourse: null });
+        }
+
+        return;
       }
 
       const avl = parser.getAvl();
-      const donneGps = avl.records;
+      console.log("📑 Parsed AVL:", JSON.stringify(avl, null, 2));
 
-      // Check that donneGps is an array and has elements
-      if (Array.isArray(donneGps) && donneGps.length > 0) {
-        const detail = donneGps[0].gps;
-        const ioElements = donneGps[0].ioElements;
-        const currentIgnition = ioElements[0]?.value; // Use optional chaining to avoid errors
-
-        // Handle ignition transitions
-        if (ignitionState === null || currentIgnition !== ignitionState) {
-          if (ignitionState === 1 && currentIgnition === 0) {
-            // Record data when ignition goes from ON to OFF
-            await saveData(imei, donneGps[0], currentIgnition);
-            console.log("Data recorded with ignition = 0.");
-          }
-
-          ignitionState = currentIgnition; // Update ignition state
-
-          if (ignitionState === 1) {
-            console.log("Ignition is ON, will continue to record data.");
-          }
-        }
-
-        // Save data only if ignition is ON
-        if (ignitionState === 1 && detail.latitude !== 0 && detail.longitude !== 0) {
-          await saveData(imei, donneGps[0], currentIgnition);
-          console.log("Data recorded with ignition = 1");
-        }
-      } else {
-        console.warn("No GPS records found or records is undefined.");
+      if (!avl || !avl.records || avl.records.length === 0) {
+        console.warn("⚠️ No AVL records found for IMEI:", imei);
+        return;
       }
 
-      const writer = new binutils.BinaryWriter();
-      writer.WriteInt32(avl.number_of_data);
-      c.write(writer.ByteBuffer); // Send ACK for AVL DATA
-      c.write(Buffer.from('000000000000000F0C010500000007676574696E666F0100004312', 'hex'));
+      const state = deviceState.get(imei);
+      for (const record of avl.records) {
+        const { gps, timestamp, ioElements } = record;
+
+        if (!gps || gps.latitude === 0 || gps.longitude === 0) {
+          console.log("❌ Skipping invalid GPS data for IMEI:", imei);
+          continue;
+        }
+
+        const io = {
+          ignition: (ioElements.find(io => io.id === 0x01)?.value) || 0,
+          mouvement: (ioElements.find(io => io.id === 0x02)?.value) || 0,
+          gnss_statut: (ioElements.find(io => io.id === 0x03)?.value) || 1,
+          CEINTURE: (ioElements.find(io => io.id === 0x05)?.value) || 0,
+        };
+
+        if ((io.ignition === 1 && state.lastIgnition === 0) || (io.ignition === 0 && state.lastIgnition === 1)) {
+          state.currentCodeCourse = generateUniqueCode();
+        }
+
+        const dataToSend = {
+          imei: imei,
+          record: {
+            latitude: gps.latitude,
+            longitude: gps.longitude,
+            altitude: gps.altitude,
+            angle: gps.angle,
+            satellites: gps.satellites,
+            speed: gps.speed,
+            ignition: io.ignition,
+            mouvement: io.mouvement,
+            gnss_statut: io.gnss_statut,
+            CEINTURE: io.CEINTURE,
+            currentCodeCourse: state.currentCodeCourse,
+            timestamp: new Date(timestamp).toISOString(),
+          },
+        };
+
+        console.log("📤 Sending data to WebSocket:", JSON.stringify(dataToSend, null, 2));
+        broadcast(dataToSend);
+        state.lastIgnition = io.ignition;
+      }
+
+    } catch (err) {
+      console.error("❗ Error processing data for IMEI:", imei, err);
     }
   });
 });
 
-// Server listening
-server.listen(2354, '141.94.194.193', () => {
-  console.log("Server started on port 2354");
-});
-
-// Function to generate a unique code
-function generateUniqueCode() {
-  const timestamp = new Date().getTime().toString(16);
-  const randomNum = Math.floor(Math.random() * 1000);
-  return timestamp + randomNum;
+// === WebSocket Broadcast ===
+function broadcast(data) {
+  clients.forEach(client => {
+    if (client.readyState === 1) { // WebSocket.OPEN === 1
+      client.send(JSON.stringify(data));
+    }
+  });
 }
 
-// Function to save data to the database
-async function saveData(imei, gpsData, ignition) {
-  const detail = gpsData.gps;
-  const ioElements = gpsData.ioElements;
-
-  let lastData;
-  try {
-    lastData = await query('SELECT * FROM tracking_data WHERE device_uid = ? ORDER BY date DESC LIMIT 1', [imei]);
-    console.log("Last data fetched:", lastData); // Log to check what is fetched
-  } catch (error) {
-    console.error("Database query error:", error);
-    return; // Exit the function if there's an error
+// === Local HTTP WebSocket Server (No SSL) ===
+const httpServer = http.createServer();
+const io = socketIo(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
   }
+});
 
-  let codeunique;
-  if (Array.isArray(lastData) && lastData.length) {
-    if (lastData[0].ignition !== ignition) {
-      codeunique = generateUniqueCode();
-    } else {
-      codeunique = lastData[0].CODE_COURSE;
-    }
-  } else {
-    codeunique = generateUniqueCode(); // Handle case where lastData is empty or undefined
-  }
+io.on('connection', (socket) => {
+  console.log("🔗 WebSocket client connected");
+  clients.add(socket);
 
-  const detailsData = [
-    detail.latitude,
-    detail.longitude,
-    detail.altitude,
-    detail.angle,
-    detail.satellites,
-    detail.speed,
-    ignition,
-    ioElements[1]?.value, // Optional chaining to avoid undefined errors
-    ioElements[2]?.value,
-    ioElements[5]?.value,
-    imei,
-    JSON.stringify(gpsData.records),
-    codeunique
-  ];
+  socket.on('disconnect', () => {
+    console.log("❌ WebSocket client disconnected");
+    clients.delete(socket);
+  });
+});
 
-  try {
-    await query('INSERT INTO tracking_data(latitude, longitude, altitude, angle, satellites, vitesse, ignition, mouvement, gnss_statut, CEINTURE, device_uid, json, CODE_COURSE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', detailsData);
-  } catch (error) {
-    console.error("Error inserting data:", error);
-  }
+// === Start Servers ===
+tcpServer.listen(TCP_PORT, () => {
+  console.log(`🚀 TCP Server listening on port ${TCP_PORT}`);
+});
+
+httpServer.listen(WSS_PORT, () => {
+  console.log(`🌐 WebSocket Server (HTTP) listening on port ${WSS_PORT}`);
+});
+
+// === Unique Code Generator ===
+function generateUniqueCode() {
+  const timestamp = new Date().toISOString();
+  const randomNum = Math.floor(Math.random() * 1000);
+  return `${timestamp}-${randomNum}`;
 }

@@ -60,7 +60,7 @@ BinaryReader.prototype = {
             return 0;
         }
 
-        var s_Val = (this.Endianness == 'little') ? this.ByteBuffer.readUInt32LE(0) : this.ByteBuffer.readUInt32BE(0);
+        var s_Val = (this.Endianness == 'little') ? this.ByteBuffer.readBigUInt64LE(0) : this.ByteBuffer.readBigUInt64BE(0);
         this.ByteBuffer = this.ByteBuffer.slice(8);
         this.Position += 8;
         return s_Val;
@@ -104,7 +104,7 @@ BinaryReader.prototype = {
             return 0;
         }
 
-        var s_Val = (this.Endianness == 'little') ? this.ByteBuffer.readInt32LE(0) : this.ByteBuffer.readInt32BE(0);
+        var s_Val = (this.Endianness == 'little') ? this.ByteBuffer.readBigInt64LE(0) : this.ByteBuffer.readBigInt64BE(0);
         this.ByteBuffer = this.ByteBuffer.slice(8);
         this.Position += 8;
         return s_Val;
