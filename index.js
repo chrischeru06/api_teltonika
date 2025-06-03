@@ -57,7 +57,7 @@ function toMysqlDatetime(isoDate) {
   return isoDate.replace('T', ' ').replace('Z', '').split('.')[0];
 }
 
-async function insertTrackingData(values) {
+async function insertTrackingData(values, imei) {
   const insertQuery = `
     INSERT INTO tracking_data (
       latitude, longitude, vitesse, altitude, date,
@@ -68,7 +68,7 @@ async function insertTrackingData(values) {
 
   try {
     await db.execute(insertQuery, values);
-    console.log(`✅ Data inserted into DB for IMEI: ${values[10]}`);
+    console.log(`✅ Data inserted into DB for IMEI: ${imei}`);
   } catch (dbErr) {
     console.error('❌ MySQL Insert Error:');
     console.error('  Query:', insertQuery.replace(/\s+/g, ' '));
@@ -202,10 +202,10 @@ const tcpServer = net.createServer(socket => {
           });
         }
 
-        await insertTrackingData(values);
+        await insertTrackingData(values, imei);
         state.lastIgnition = io.ignition;
 
-        if (io.ignition === 0 && ignitionChanged && state.trip && state.trip.points.length > 1) {
+        if (io.ignition === 0 && ignitionChanged && state.trip) {
           const geojson = {
             type: "FeatureCollection",
             features: [
@@ -217,20 +217,16 @@ const tcpServer = net.createServer(socket => {
                 },
                 properties: {
                   imei,
-                  startTime: state.trip.points[0].properties.timestamp,
-                  endTime: state.trip.points[state.trip.points.length - 1].properties.timestamp,
+                  startTime: state.trip.points[0]?.properties.timestamp,
+                  endTime: state.trip.points[state.trip.points.length - 1]?.properties.timestamp,
                   totalPoints: state.trip.points.length
                 }
               }
             ]
           };
 
-          try {
-            fs.writeFileSync(state.trip.path, JSON.stringify(geojson, null, 2));
-            console.log(`✅ Trip saved to ${state.trip.path}`);
-          } catch (fileErr) {
-            console.error(`❌ Failed to save trip GeoJSON for IMEI ${imei}:`, fileErr);
-          }
+          fs.writeFileSync(state.trip.path, JSON.stringify(geojson, null, 2));
+          console.log(`✅ Trip saved to ${state.trip.path}`);
 
           try {
             const deleteQuery = `
