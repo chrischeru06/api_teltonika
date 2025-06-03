@@ -57,7 +57,7 @@ function toMysqlDatetime(isoDate) {
   return isoDate.replace('T', ' ').replace('Z', '').split('.')[0];
 }
 
-async function insertTrackingData(values, imei) {
+async function insertTrackingData(values) {
   const insertQuery = `
     INSERT INTO tracking_data (
       latitude, longitude, vitesse, altitude, date,
@@ -68,19 +68,15 @@ async function insertTrackingData(values, imei) {
 
   try {
     await db.execute(insertQuery, values);
-    console.log(`✅ Data inserted into DB for IMEI: ${imei}`);
+    console.log(`✅ Data inserted into DB for IMEI: ${values[9]}`);
   } catch (dbErr) {
-    console.error('❌ MySQL Insert Error:');
-    console.error('  Query:', insertQuery.replace(/\s+/g, ' '));
-    console.error('  Values:', values);
-    console.error('  Error message:', dbErr.message);
+    console.error('❌ MySQL Insert Error:', dbErr.message);
   }
 }
 
 const tcpServer = net.createServer(socket => {
   console.log('🟢 TCP client connected');
   let imei = null;
-
   socket.setTimeout(TCP_TIMEOUT);
 
   socket.on('timeout', () => {
@@ -101,7 +97,6 @@ const tcpServer = net.createServer(socket => {
   socket.on('data', async data => {
     try {
       console.log('📥 Raw data received (hex):', data.toString('hex'));
-
       const parser = new Parser(data);
 
       if (parser.isImei) {
@@ -122,7 +117,7 @@ const tcpServer = net.createServer(socket => {
       }
 
       const avl = parser.getAvl();
-      if (!avl || !avl.records || avl.records.length === 0) {
+      if (!avl?.records?.length) {
         console.warn('⚠️ No AVL records found for IMEI:', imei);
         return;
       }
@@ -131,11 +126,7 @@ const tcpServer = net.createServer(socket => {
 
       for (const record of avl.records) {
         const { gps, timestamp, ioElements } = record;
-
-        if (!gps || gps.latitude === 0 || gps.longitude === 0) {
-          console.log('❌ Skipping invalid GPS data for IMEI:', imei);
-          continue;
-        }
+        if (!gps || gps.latitude === 0 || gps.longitude === 0) continue;
 
         const io = {
           ignition: ioElements.find(io => io.label === 'Ignition')?.value || 0,
@@ -202,7 +193,7 @@ const tcpServer = net.createServer(socket => {
           });
         }
 
-        await insertTrackingData(values, imei);
+        await insertTrackingData(values);
         state.lastIgnition = io.ignition;
 
         if (io.ignition === 0 && ignitionChanged && state.trip) {
@@ -229,11 +220,24 @@ const tcpServer = net.createServer(socket => {
           console.log(`✅ Trip saved to ${state.trip.path}`);
 
           try {
-            const deleteQuery = `
-              DELETE FROM tracking_data
-              WHERE device_uid = ?
+            const insertGeoPathQuery = `
+              INSERT INTO path_histo_trajet_geojson (
+                DEVICE_UID, TRIP_START, TRIP_END, PATH_FILE
+              ) VALUES (?, ?, ?, ?)
             `;
-            await db.execute(deleteQuery, [imei]);
+            await db.execute(insertGeoPathQuery, [
+              imei,
+              geojson.features[0].properties.startTime,
+              geojson.features[0].properties.endTime,
+              state.trip.path
+            ]);
+            console.log(`✅ Trip metadata saved to path_histo_trajet_geojson for IMEI: ${imei}`);
+          } catch (metaErr) {
+            console.error('❌ Failed to insert GeoJSON path metadata:', metaErr.message);
+          }
+
+          try {
+            await db.execute('DELETE FROM tracking_data WHERE device_uid = ?', [imei]);
             console.log(`🧹 DB cleaned for IMEI: ${imei}`);
           } catch (err) {
             console.error('❌ Failed to delete data from DB:', err.message);
