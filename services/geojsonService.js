@@ -1,53 +1,37 @@
+// services/geojsonService.js
 const fs = require('fs');
 const path = require('path');
-const logger = require('../logger/logger');
+const { IMEI_FOLDER_BASE } = require('../config');
+const { saveTripRecord } = require('./tripService');
 
-function saveTripGeoJson(imei, trip) {
-  return new Promise((resolve, reject) => {
-    try {
-      if (!trip || !trip.points || trip.points.length < 2) {
-        logger.warn(`Trip for IMEI ${imei} discarded — not enough points`);
-        return resolve();
-      }
+function cleanImei(imei) {
+  return String(imei).replace(/[^\d]/g, '').slice(0, 15);
+}
 
-      const coordinates = trip.points.map(p => p.geometry.coordinates);
-      const properties = {
-        imei,
-        startTime: trip.startTime,
-        endTime: trip.endTime,
-        totalPoints: trip.points.length,
-      };
+async function saveTripGeoJson(imei, trip) {
+  const safeImei = cleanImei(imei);
+  if (safeImei.length !== 15) {
+    throw new Error(`IMEI invalide pour GeoJSON: ${imei}`);
+  }
 
-      const geojson = {
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates,
-        },
-        properties
-      };
+  const imeiFolder = path.join(IMEI_FOLDER_BASE, safeImei);
+  if (!fs.existsSync(imeiFolder)) fs.mkdirSync(imeiFolder, { recursive: true });
 
-      const folder = path.join(__dirname, '..', 'IMEI', imei);
-      if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+  const filename = `trip_${trip.id}.geojson`;
+  const filepath = path.join(imeiFolder, filename);
 
-      const tripId = trip.id || Date.now();
-      const safeStart = trip.startTime.replace(/[:.]/g, '-');
-      const filename = `trip_${safeStart}_id-${tripId}_linestring.geojson`;
-      const fullPath = path.join(folder, filename);
+  const geojson = {
+    type: "FeatureCollection",
+    features: trip.points,
+  };
 
-      fs.writeFile(fullPath, JSON.stringify(geojson, null, 2), (err) => {
-        if (err) {
-          logger.error(`Failed to save trip for IMEI ${imei}: ${err.message}`);
-          return reject(err);
-        }
+  fs.writeFileSync(filepath, JSON.stringify(geojson, null, 2));
 
-        logger.info(`Trip saved: ${fullPath}`);
-        resolve();
-      });
-    } catch (err) {
-      logger.error(`Exception in saveTripGeoJson: ${err.message}`);
-      reject(err);
-    }
+  await saveTripRecord({
+    imei: safeImei,
+    start: trip.startTime,
+    end: trip.endTime,
+    path: filepath,
   });
 }
 

@@ -1,21 +1,22 @@
+// db/pool.js
 const mysql = require('mysql2/promise');
-const { dbConfig } = require('../config');
-const logger = require('../logger/logger');
+const { DB_HOST, DB_USER, DB_PASS, DB_NAME } = require('../config');
 
-let pool;
+let pool = null;
 
-async function initDbPool() {
-  try {
-    pool = await mysql.createPool(dbConfig);
-    logger.info('MySQL pool created');
-  } catch (err) {
-    logger.error('MySQL pool creation failed:', err.message);
-    setTimeout(initDbPool, 5000);
+function getPool() {
+  if (!pool) {
+    pool = mysql.createPool({
+      host: DB_HOST,
+      user: DB_USER,
+      password: DB_PASS,
+      database: DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+    });
   }
+  return pool;
 }
 
-initDbPool();
-
-module.exports = {
-  getPool: () => pool,
-};
+module.exports = { getPool };

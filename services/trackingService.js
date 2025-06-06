@@ -1,31 +1,27 @@
+// services/trackingService.js
 const { getPool } = require('../db/pool');
+const { insertTrackingData, clearTrackingData } = require('../db/queries');
 const logger = require('../logger/logger');
 
-async function insertTrackingData(values) {
-  const query = `INSERT INTO tracking_data (
-    latitude, longitude, vitesse, altitude, date,
-    angle, satellites, mouvement, gnss_statut,
-    device_uid, ignition
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
+async function insertTrackingDataService(values) {
   try {
     const pool = getPool();
-    await pool.execute(query, values);
+    await insertTrackingData(pool, values);
   } catch (err) {
     logger.error('Insert tracking data error:', err.message);
   }
 }
 
-async function clearTrackingData(device_uid) {
+async function clearTrackingDataService(device_uid) {
   try {
     const pool = getPool();
-    await pool.execute('DELETE FROM tracking_data WHERE device_uid = ?', [device_uid]);
+    await clearTrackingData(pool, device_uid);
   } catch (err) {
     logger.error('Clear tracking data error:', err.message);
   }
 }
 
 module.exports = {
-  insertTrackingData,
-  clearTrackingData,
+  insertTrackingData: insertTrackingDataService,
+  clearTrackingData: clearTrackingDataService,
 };
