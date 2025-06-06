@@ -48,8 +48,10 @@ const tcpServer = net.createServer(socket => {
       }
 
       if (!parsed?.records?.length) return;
-
       const state = deviceState.get(imei);
+
+      let currentIgnition = state.lastIgnition;
+      let newIgnition = null;
 
       for (const record of parsed.records) {
         const { gps, timestamp, ioElements } = record;
@@ -61,14 +63,27 @@ const tcpServer = net.createServer(socket => {
 
         const timestampIso = toMysqlDatetime(new Date(timestamp).toISOString());
 
-        if (ignition === 1) {
-          await insertTrackingData([
-            gps.latitude, gps.longitude, gps.speed || 0, gps.altitude, timestampIso,
-            gps.angle, gps.satellites, mouvement, gnss_statut, imei, ignition,
-          ]);
+        // Log to console as requested
+        console.log('Inserting to DB:', {
+          imei, lat: gps.latitude, lon: gps.longitude, speed: gps.speed,
+          alt: gps.altitude, timestamp: timestampIso, ignition
+        });
 
+        // Insert into database
+        await insertTrackingData([
+          gps.latitude, gps.longitude, gps.speed || 0, gps.altitude, timestampIso,
+          gps.angle, gps.satellites, mouvement, gnss_statut, imei, ignition,
+        ]);
+
+        // Handle ignition ON
+        if (ignition === 1) {
           if (!state.trip) {
-            state.trip = { startTime: timestampIso, points: [] };
+            const startTime = timestampIso;
+            state.trip = {
+              id: Date.now(),
+              startTime,
+              points: []
+            };
           }
 
           state.trip.points.push({
@@ -79,22 +94,26 @@ const tcpServer = net.createServer(socket => {
               altitude: gps.altitude,
               angle: gps.angle,
               satellites: gps.satellites,
-            },
+            }
           });
         }
 
-        const ignitionChanged = state.lastIgnition !== null && state.lastIgnition === 1 && ignition === 0;
-        state.lastIgnition = ignition;
-
-        if (ignitionChanged && state.trip) {
-          state.trip.endTime = timestampIso;
-
-          await saveTripGeoJson(imei, state.trip);
-          await clearTrackingData(imei);
-
-          delete state.trip;
-        }
+        newIgnition = ignition;
       }
+
+      // Detect transition 1 → 0
+      if (state.lastIgnition === 1 && newIgnition === 0 && state.trip) {
+        const endTime = toMysqlDatetime(new Date().toISOString());
+        state.trip.endTime = endTime;
+
+        // Save trip
+        await saveTripGeoJson(imei, state.trip);
+        await clearTrackingData(imei);
+
+        delete state.trip;
+      }
+
+      state.lastIgnition = newIgnition;
     } catch (err) {
       logger.error(`Processing error for IMEI ${imei}: ${err.message}`);
     }

@@ -1,56 +1,54 @@
 const fs = require('fs');
 const path = require('path');
-const { getPool } = require('../db/pool');
 const logger = require('../logger/logger');
-const { MAX_GEOJSON_SIZE, IMEI_FOLDER_BASE } = require('../config');
 
-async function saveTripGeoJson(imei, trip) {
-  const folder = path.join(IMEI_FOLDER_BASE, imei);
-  if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+function saveTripGeoJson(imei, trip) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!trip || !trip.points || trip.points.length < 2) {
+        logger.warn(`Trip for IMEI ${imei} discarded — not enough points`);
+        return resolve();
+      }
 
-  const dateName = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `trip_${dateName}_linestring.geojson`;
-  const filepath = path.join(folder, filename);
+      const coordinates = trip.points.map(p => p.geometry.coordinates);
+      const properties = {
+        imei,
+        startTime: trip.startTime,
+        endTime: trip.endTime,
+        totalPoints: trip.points.length,
+      };
 
-  const geojson = {
-    type: "FeatureCollection",
-    features: [
-      {
+      const geojson = {
         type: "Feature",
         geometry: {
           type: "LineString",
-          coordinates: trip.points.map(p => p.geometry.coordinates)
+          coordinates,
         },
-        properties: {
-          imei,
-          startTime: trip.startTime,
-          endTime: trip.endTime,
-          totalPoints: trip.points.length
+        properties
+      };
+
+      const folder = path.join(__dirname, '..', 'IMEI', imei);
+      if (!fs.existsSync(folder)) fs.mkdirSync(folder, { recursive: true });
+
+      const tripId = trip.id || Date.now();
+      const safeStart = trip.startTime.replace(/[:.]/g, '-');
+      const filename = `trip_${safeStart}_id-${tripId}_linestring.geojson`;
+      const fullPath = path.join(folder, filename);
+
+      fs.writeFile(fullPath, JSON.stringify(geojson, null, 2), (err) => {
+        if (err) {
+          logger.error(`Failed to save trip for IMEI ${imei}: ${err.message}`);
+          return reject(err);
         }
-      }
-    ]
-  };
 
-  const geojsonStr = JSON.stringify(geojson, null, 2);
-
-  if (Buffer.byteLength(geojsonStr) > MAX_GEOJSON_SIZE) {
-    logger.warn(`GeoJSON file too large for IMEI ${imei}`);
-    // Add split logic here if needed
-  }
-
-  fs.writeFileSync(filepath, geojsonStr);
-  logger.info(`Trip saved: ${filepath}`);
-
-  try {
-    const pool = getPool();
-    await pool.execute(
-      `INSERT INTO path_histo_trajet_geojson (DEVICE_UID, TRIP_START, TRIP_END, PATH_FILE)
-       VALUES (?, ?, ?, ?)`,
-      [imei, trip.startTime, trip.endTime, filepath]
-    );
-  } catch (err) {
-    logger.error('Insert trip history error:', err.message);
-  }
+        logger.info(`Trip saved: ${fullPath}`);
+        resolve();
+      });
+    } catch (err) {
+      logger.error(`Exception in saveTripGeoJson: ${err.message}`);
+      reject(err);
+    }
+  });
 }
 
 module.exports = {

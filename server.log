@@ -2254,3 +2254,49 @@
 {"level":"info","message":"Trip saved: /var/www/html/IMEI/trip_2025-06-04T14-48-31-394Z_linestring.geojson","timestamp":"2025-06-04T14:48:31.395Z"}
 {"level":"error","message":"Processing error for IMEI 352016700394133: ENOENT: no such file or directory, open '/var/www/html/IMEI/352016700394133/trip_2025-06-04T14-48-48-180Z_linestring.geojson'","timestamp":"2025-06-04T14:48:48.182Z"}
 {"level":"info","message":"Trip saved: /var/www/html/IMEI/trip_2025-06-04T14-48-53-706Z_linestring.geojson","timestamp":"2025-06-04T14:48:53.706Z"}
+{"level":"info","message":"TCP Server running on port 2354","timestamp":"2025-06-04T16:18:04.997Z"}
+{"level":"info","message":"MySQL pool created","timestamp":"2025-06-04T16:18:05.000Z"}
+{"level":"info","message":"TCP client connected","timestamp":"2025-06-04T16:18:05.589Z"}
+{"level":"info","message":"TCP client connected","timestamp":"2025-06-04T16:18:11.728Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075129310/trip_2025-06-04T16-18-22-106Z_linestring.geojson","timestamp":"2025-06-04T16:18:22.107Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-18-26-534Z_linestring.geojson","timestamp":"2025-06-04T16:18:26.534Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075129310/trip_2025-06-04T16-18-29-217Z_linestring.geojson","timestamp":"2025-06-04T16:18:29.217Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075129310/trip_2025-06-04T16-18-29-231Z_linestring.geojson","timestamp":"2025-06-04T16:18:29.231Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075129310/trip_2025-06-04T16-18-32-678Z_linestring.geojson","timestamp":"2025-06-04T16:18:32.678Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-18-32-893Z_linestring.geojson","timestamp":"2025-06-04T16:18:32.893Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075129310/trip_2025-06-04T16-18-36-302Z_linestring.geojson","timestamp":"2025-06-04T16:18:36.302Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075129310/trip_2025-06-04T16-18-40-521Z_linestring.geojson","timestamp":"2025-06-04T16:18:40.521Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-18-45-558Z_linestring.geojson","timestamp":"2025-06-04T16:18:45.558Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-18-49-676Z_linestring.geojson","timestamp":"2025-06-04T16:18:49.677Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-18-58-192Z_linestring.geojson","timestamp":"2025-06-04T16:18:58.192Z"}
+{"level":"info","message":"TCP Server running on port 2354","timestamp":"2025-06-04T16:20:04.869Z"}
+{"level":"info","message":"MySQL pool created","timestamp":"2025-06-04T16:20:04.871Z"}
+{"level":"info","message":"TCP client connected","timestamp":"2025-06-04T16:20:22.468Z"}
+{"level":"info","message":"TCP client connected","timestamp":"2025-06-04T16:20:23.171Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-20-34-377Z_linestring.geojson","timestamp":"2025-06-04T16:20:34.377Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075136687/trip_2025-06-04T16-20-40-620Z_linestring.geojson","timestamp":"2025-06-04T16:20:40.620Z"}
+{"level":"info","message":"TCP client connected","timestamp":"2025-06-04T16:20:44.493Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-20-45-319Z_linestring.geojson","timestamp":"2025-06-04T16:20:45.319Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-20-45-358Z_linestring.geojson","timestamp":"2025-06-04T16:20:45.358Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-04T16-20-48-721Z_linestring.geojson","timestamp":"2025-06-04T16:20:48.721Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/350612075136687/trip_2025-06-04T16-21-09-730Z_linestring.geojson","timestamp":"2025-06-04T16:21:09.731Z"}
+{"level":"info","message":"TCP Server running on port 2354","timestamp":"2025-06-06T09:44:34.911Z"}
+{"level":"info","message":"MySQL pool created","timestamp":"2025-06-06T09:44:34.914Z"}
+{"level":"info","message":"TCP client connected","timestamp":"2025-06-06T09:44:36.651Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-44-46-763Z_linestring.geojson","timestamp":"2025-06-06T09:44:46.764Z"}
+{"level":"info","message":"TCP Server running on port 2354","timestamp":"2025-06-06T09:48:47.632Z"}
+{"level":"info","message":"MySQL pool created","timestamp":"2025-06-06T09:48:47.634Z"}
+{"level":"info","message":"TCP client connected","timestamp":"2025-06-06T09:48:48.111Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-49-23-657Z_linestring.geojson","timestamp":"2025-06-06T09:49:23.657Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-49-23-678Z_linestring.geojson","timestamp":"2025-06-06T09:49:23.678Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-49-29-937Z_linestring.geojson","timestamp":"2025-06-06T09:49:29.937Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-52-32-852Z_linestring.geojson","timestamp":"2025-06-06T09:52:32.853Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-52-38-409Z_linestring.geojson","timestamp":"2025-06-06T09:52:38.410Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-52-43-352Z_linestring.geojson","timestamp":"2025-06-06T09:52:43.352Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-52-48-290Z_linestring.geojson","timestamp":"2025-06-06T09:52:48.290Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-52-52-613Z_linestring.geojson","timestamp":"2025-06-06T09:52:52.614Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-52-57-590Z_linestring.geojson","timestamp":"2025-06-06T09:52:57.591Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-53-04-431Z_linestring.geojson","timestamp":"2025-06-06T09:53:04.431Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-53-09-428Z_linestring.geojson","timestamp":"2025-06-06T09:53:09.429Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-53-12-571Z_linestring.geojson","timestamp":"2025-06-06T09:53:12.572Z"}
+{"level":"info","message":"Trip saved: /var/www/html/IMEI/352016700394133/trip_2025-06-06T09-53-17-450Z_linestring.geojson","timestamp":"2025-06-06T09:53:17.451Z"}
